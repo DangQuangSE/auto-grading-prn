@@ -8,6 +8,14 @@ public interface IRubricService
 
     Task<Rubric?> GetByIdAsync(Guid id, bool includeCriteria, CancellationToken cancellationToken);
 
+    /// <summary>Cache-aside lookup used only by <c>CatalogGrpcService.GetCriteriaForAssignment</c>: on a miss,
+    /// delegates to <see cref="IRubricRepository.ListAsync"/> restricted to the Confirmed-visible view
+    /// (<c>userId: null, isAdmin: false</c>) and returns the first matching rubric's criteria (empty list if none).
+    /// Deliberately takes no caller identity — the cache key has none either, so the result must always be the
+    /// same caller-independent view. Callers must not be given a way to see Draft criteria through this method;
+    /// that path is REST's <see cref="GetByIdAsync"/> + authorization, not this one.</summary>
+    Task<List<RubricCriterion>> GetCriteriaForAssignmentAsync(Guid assignmentId, CancellationToken cancellationToken);
+
     /// <summary>Must be called BEFORE the endpoint uploads anything to object storage — validates scope/authorization
     /// so an unauthorized attempt never touches storage. Returns the id of the rubric this upload would replace (matched
     /// by <paramref name="assignmentId"/>), or <c>null</c> for a brand-new rubric. Throws <see cref="RubricForbiddenException"/>

@@ -27,8 +27,9 @@ Tài liệu này liệt kê toàn bộ công nghệ/công cụ đang dùng trong
 - **Nếu không có:** frontend phải gọi thẳng vào từng service theo port riêng (`:5001`, `:5002`...), phải tự xử lý CORS ở từng service, và mất luôn điểm tập trung để áp auth policy — đây chính là nguyên nhân bug "Not Found" ở `/catalog/classes` vừa sửa (policy khai báo sai ở tầng Gateway).
 
 ### RabbitMQ (RabbitMQ.Client) + `IEventBus`/`RabbitMqEventBus`
-- **Dùng để làm gì:** message broker cho giao tiếp bất đồng bộ giữa các service — ví dụ Catalog publish `ClassLecturerAssigned`, Grading publish `GradePublished`, và Identity subscribe để cập nhật cache nội bộ (`ClassLecturerCache`, `SubmissionStudent`...). Đây là cách duy nhất các service trao đổi dữ liệu chéo nhau — quy ước của repo là **không gọi HTTP trực tiếp giữa các service**.
-- **Nếu không có:** phải quay lại gọi HTTP đồng bộ giữa các service (service-to-service HTTP), tạo ra coupling chặt và single-point-of-failure (nếu Identity down thì Catalog cũng phải chờ). Toàn bộ kiến trúc "event-driven cache" ở Identity (Phase 2 của plan roster) sẽ phải thiết kế lại.
+- **Dùng để làm gì:** message broker chính cho giao tiếp bất đồng bộ giữa các service — ví dụ Catalog publish `ClassLecturerAssigned`, Grading publish `GradePublished`, và Identity subscribe để cập nhật cache nội bộ (`ClassLecturerCache`, `SubmissionStudent`...). Ưu tiên bất đồng bộ để tránh single-point-of-failure.
+- **Ghi chú (2026-07-25):** Ngoài RabbitMQ, có một số gọi đồng bộ trực tiếp giữa services: Grading gọi Submission qua HTTP (`GET /submissions/{id}`), và gọi Catalog qua gRPC (3 methods: `GetAssignment`, `GetCriteriaForAssignment`, `GetLecturerStudentIds`). Những gọi này cần response ngay (không chờ bất đồng bộ) nên không thể qua RabbitMQ.
+- **Nếu không có:** phải dùng toàn bộ gọi HTTP/gRPC đồng bộ giữa các service, tạo ra coupling chặt và single-point-of-failure. Toàn bộ kiến trúc "event-driven cache" ở Identity sẽ phải thiết kế lại.
 
 ### Hangfire (Hangfire.Core / AspNetCore / SqlServer)
 - **Dùng để làm gì:** chạy background job — ví dụ Submission service tự extract nội dung file sau khi upload, Grading service tự chạy AI grading sau khi có artifact, Catalog service parse rubric Word file ở background. Job lưu trạng thái trong chính SQL Server (không cần Redis).
@@ -119,8 +120,8 @@ Tài liệu này liệt kê toàn bộ công nghệ/công cụ đang dùng trong
 ## 8. Hạ tầng chạy (Infrastructure)
 
 ### Docker + Docker Compose
-- **Dùng để làm gì:** đóng gói và chạy toàn bộ hệ thống (9 container: 5 service + Gateway + SQL Server + RabbitMQ + MinIO, cộng 2 container FE tùy chọn) bằng 1 lệnh `docker compose up`, không cần cài .NET/SQL Server/RabbitMQ/MinIO thật lên máy.
-- **Nếu không có:** phải tự cài đặt và cấu hình từng phần mềm (SQL Server, RabbitMQ, MinIO...) trực tiếp lên máy hoặc máy chủ, chạy từng service bằng `dotnet run` tay, khó đồng bộ môi trường dev giữa các máy khác nhau trong nhóm.
+- **Dùng để làm gì:** đóng gói và chạy toàn bộ hệ thống (12 container: 5 service + Gateway + SQL Server + RabbitMQ + Redis + MinIO, cộng 2 container FE) bằng 1 lệnh `docker compose up`, không cần cài .NET/SQL Server/RabbitMQ/Redis/MinIO thật lên máy.
+- **Nếu không có:** phải tự cài đặt và cấu hình từng phần mềm (SQL Server, RabbitMQ, Redis, MinIO...) trực tiếp lên máy hoặc máy chủ, chạy từng service bằng `dotnet run` tay, khó đồng bộ môi trường dev giữa các máy khác nhau trong nhóm.
 
 ### Nginx (trong Dockerfile của `admin-web`/`user-web`)
 - **Dùng để làm gì:** serve file tĩnh (HTML/JS/CSS) sau khi Vite build xong, khi chạy 2 app FE qua Docker (khác với `npm run dev` chạy Vite dev server trực tiếp).
@@ -137,6 +138,7 @@ Tài liệu này liệt kê toàn bộ công nghệ/công cụ đang dùng trong
 | Database | SQL Server 2022 | Lưu dữ liệu, mỗi service 1 DB riêng |
 | Gateway | YARP | Cổng vào duy nhất, định tuyến + auth policy |
 | Message broker | RabbitMQ | Giao tiếp bất đồng bộ giữa service |
+| gRPC | Grpc.Tools + protobuf | Gọi đồng bộ Grading→Catalog (3 methods), HTTP/2 h2c |
 | Background job | Hangfire | Extract file, AI grading chạy nền |
 | Object storage | MinIO | Lưu file Word/report/diagram thật |
 | Auth | JWT + Google OAuth | Đăng nhập email hoặc Google |

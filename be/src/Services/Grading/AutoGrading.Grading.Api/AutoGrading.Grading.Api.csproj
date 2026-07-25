@@ -15,11 +15,22 @@
     </PackageReference>
     <PackageReference Include="Hangfire.AspNetCore" Version="1.8.14" />
     <PackageReference Include="Hangfire.SqlServer" Version="1.8.14" />
+    <PackageReference Include="Grpc.Net.Client" Version="2.63.0" />
+    <PackageReference Include="Grpc.Net.ClientFactory" Version="2.63.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.24.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.63.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\..\BuildingBlocks\AutoGrading.Contracts\AutoGrading.Contracts.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\AutoGrading.Common\AutoGrading.Common.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="..\..\Catalog\AutoGrading.Catalog.Api\Protos\catalog.proto" GrpcServices="Client" Link="Protos\catalog.proto" />
   </ItemGroup>
 
 </Project>

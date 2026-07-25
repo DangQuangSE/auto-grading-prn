@@ -2,7 +2,7 @@
 
 > **Tài liệu Tham khảo Design System**: [GeeksforGeeks - How to Draw Architecture Diagrams](https://www.geeksforgeeks.org/system-design/how-to-draw-architecture-diagrams/)  
 > **Hệ thống**: AutoGrading SWD (Hệ thống Chấm bài Tự động Bằng AI cho Sinh viên & Giảng viên)  
-> **Phiên bản Code-Matched**: 2.0 (Cập nhật chuẩn hóa theo 100% mã nguồn thực tế)  
+> **Phiên bản Code-Matched**: 2.1 (Cập nhật 2026-07-25: thêm gRPC Grading↔Catalog integration)  
 > **Ngôn ngữ sơ đồ**: Mermaid Code (`.md` standard)
 
 ---
@@ -84,7 +84,7 @@ graph TD
     CS -->|Upload/Download Rubric Files| MINIO
 
     GS -->|HTTP Client: GetSubmissionAsync| SS
-    GS -->|HTTP Client: GetCriteriaForAssignmentAsync| CS
+    GS -->|gRPC Client: GetAssignment / GetCriteriaForAssignment / GetLecturerStudentIds| CS
     SS -->|HTTP Client: ValidateAssignment| CS
 
     SS -->|Publish: SubmissionUploaded| RMQ
@@ -247,7 +247,7 @@ graph TD
         HDR["ArtifactsExtractedHandler"]
         JOB["AiGradingJob (Hangfire)"]
         CLI_SUB["ISubmissionApiClient (HTTP GET /api/submissions/{id})"]
-        CLI_CAT["ICatalogApiClient (HTTP GET /api/assignments/{id}/criteria)"]
+        CLI_CAT["ICatalogApiClient (gRPC: GetAssignment, GetCriteriaForAssignment, GetLecturerStudentIds)"]
         OPENCODE_CLI["OpenCodeClient Engine"]
         DB_GRD[("MS SQL Server\nAutoGrading.Grading\n(AiGradingRun & AiCriterionScores)")]
         BUS_OUT["IEventBus (RabbitMQ)"]
@@ -414,7 +414,7 @@ graph TD
 
 ### 3.9 Docker Compose Orchestration & Dependency Network
 
-Toàn bộ 11 containers được liên kết trên mạng ảo `autograding-net`. Thứ tự khởi động được kiểm soát bằng thuật toán Health Check sẵn sàng (`service_healthy`).
+Toàn bộ 12 containers được liên kết trên mạng ảo `autograding-net`. Thứ tự khởi động được kiểm soát bằng thuật toán Health Check sẵn sàng (`service_healthy`).
 
 ```mermaid
 graph TD
@@ -422,6 +422,7 @@ graph TD
         subgraph Tier_1_Infrastructure["Tier 1: Core Infrastructure Containers"]
             SQL["sqlserver (Port 1433)\n[Health Check: sqlcmd SELECT 1]"]
             RMQ["rabbitmq (Port 5672/15672)\n[Health Check: rabbitmq-diagnostics ping]"]
+            REDIS["redis (Port 6379)\n[Health Check: redis-cli ping]"]
             MINIO["minio (Port 9000/9001)\n[Health Check: curl health/live]"]
         end
 
@@ -448,6 +449,7 @@ graph TD
 
     CS ..->|depends_on healthy| SQL
     CS ..->|depends_on healthy| RMQ
+    CS ..->|depends_on healthy| REDIS
     CS ..->|depends_on healthy| MINIO
 
     SS ..->|depends_on healthy| SQL
@@ -487,10 +489,11 @@ graph TD
 | **Grading Service** | `AutoGrading.Grading.Api` | Microservice | REST API + Hangfire (Port 5004) | Chạy AI Grading Pipeline, gửi prompt đến OpenCode API, lưu điểm gợi ý & công bố điểm. |
 | **Notification Service**| `AutoGrading.Notification.Api` | Microservice | SignalR Hub + REST (Port 5005) | Lắng nghe sự kiện từ RabbitMQ và đẩy thông báo thời gian thực `SubmissionUpdated` tới sinh viên. |
 | **MS SQL Server 2022** | Container `sqlserver` | Infrastructure | TCP/IP (Port 1433) | Lưu trữ cơ sở dữ liệu quan hệ cho 5 dịch vụ (`Identity`, `Catalog`, `Submission`, `Grading`, `Notification`). |
+| **Redis 7** | Container `redis` | Infrastructure | TCP (Port 6379) | In-memory cache cho Catalog gRPC responses (GetAssignment, GetCriteriaForAssignment) với TTL 30 phút, cache-aside pattern. |
 | **MinIO Storage** | Container `minio` | Infrastructure | S3 Protocol (Port 9000/9001) | Object Storage lưu trữ file DOCX/PDF bài làm và tài liệu Rubric trong bucket `autograding`. |
 | **RabbitMQ Broker** | Container `rabbitmq` | Infrastructure | AMQP Protocol (Port 5672/15672) | Event Broker trao đổi tin nhắn bất đồng bộ qua Topic Exchange `autograding.events`. |
 | **OpenCode API** | External Cloud Service | External AI | HTTPS REST (`mimo-v2.5-free`) | Engine AI chấm bài tự động và phân tích tiêu chí Rubric với cơ chế Retry 3 lần ($2^{attempt-1}$s). |
-| **Docker Compose** | `docker-compose.yml` | DevOps Layer | Virtual Bridge (`autograding-net`) | Đóng gói và điều phối 11 containers với thứ tự khởi động dựa trên Health Check. |
+| **Docker Compose** | `docker-compose.yml` | DevOps Layer | Virtual Bridge (`autograding-net`) | Đóng gói và điều phối 12 containers với thứ tự khởi động dựa trên Health Check. |
 
 ---
 *Tài liệu được khởi tạo và kiểm duyệt chính xác 100% theo mã nguồn dự án AutoGrading SWD.*

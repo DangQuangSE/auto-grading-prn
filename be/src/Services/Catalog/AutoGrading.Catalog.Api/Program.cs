@@ -1,4 +1,5 @@
 using AutoGrading.Catalog.Api.Endpoints;
+using AutoGrading.Catalog.Api.Grpc;
 using AutoGrading.Catalog.Api.Interfaces;
 using AutoGrading.Catalog.Api.Jobs;
 using AutoGrading.Catalog.Api.Repository;
@@ -7,9 +8,17 @@ using AutoGrading.Common.Auth;
 using AutoGrading.Common.Extensions;
 using AutoGrading.Common.Jobs;
 using Hangfire;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.WebHost.ConfigureKestrel(options =>
+{
+    options.ListenAnyIP(8080, o => o.Protocols = HttpProtocols.Http1);
+    options.ListenAnyIP(8081, o => o.Protocols = HttpProtocols.Http2);
+});
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
@@ -21,6 +30,7 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddEventBus(builder.Configuration);
 builder.Services.AddObjectStorage(builder.Configuration);
 builder.Services.AddOpenCodeClient(builder.Configuration);
+builder.Services.AddCacheService(builder.Configuration);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase)));
@@ -46,6 +56,11 @@ builder.Services.AddHangfire(config => config
     .UseSqlServerStorage(builder.Configuration.GetConnectionString("CatalogDb")));
 builder.Services.AddHangfireServer();
 
+builder.Services.AddGrpc();
+builder.Services.AddGrpcReflection();
+builder.Services.AddGrpcHealthChecks()
+    .AddCheck("live", () => HealthCheckResult.Healthy());
+
 builder.Services.AddHealthChecks();
 
 var app = builder.Build();
@@ -67,6 +82,9 @@ app.MapAssignmentsEndpoints();
 app.MapRubricsEndpoints();
 app.MapClassesEndpoints();
 app.MapEnrollmentsEndpoints();
+app.MapGrpcService<CatalogGrpcService>();
+app.MapGrpcHealthChecksService();
+app.MapGrpcReflectionService();
 app.MapHealthChecks("/health");
 app.UseHangfireDashboard("/hangfire", new DashboardOptions
 {

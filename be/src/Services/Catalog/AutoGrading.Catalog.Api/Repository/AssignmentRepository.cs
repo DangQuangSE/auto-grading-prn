@@ -1,11 +1,13 @@
+using AutoGrading.Catalog.Api.Caching;
 using AutoGrading.Catalog.Api.Domain;
 using AutoGrading.Catalog.Api.Interfaces;
+using AutoGrading.Common.Caching;
 using AutoGrading.Contracts.Pagination;
 using Microsoft.EntityFrameworkCore;
 
 namespace AutoGrading.Catalog.Api.Repository;
 
-public sealed class AssignmentRepository(CatalogDbContext db) : IAssignmentRepository
+public sealed class AssignmentRepository(CatalogDbContext db, ICacheService cache, ILogger<AssignmentRepository> logger) : IAssignmentRepository
 {
     public async Task<PagedResult<Assignment>> ListAsync(Guid? subjectId, int? page, int? pageSize, CancellationToken cancellationToken)
     {
@@ -33,6 +35,7 @@ public sealed class AssignmentRepository(CatalogDbContext db) : IAssignmentRepos
     {
         db.Assignments.Add(assignment);
         await db.SaveChangesAsync(cancellationToken);
+        await cache.InvalidateAsync(logger, CacheKeys.Assignment(assignment.Id), cancellationToken);
         return assignment;
     }
 
@@ -55,6 +58,7 @@ public sealed class AssignmentRepository(CatalogDbContext db) : IAssignmentRepos
         assignment.DueDate = dueDate;
         assignment.MaxAttempts = maxAttempts;
         await db.SaveChangesAsync(cancellationToken);
+        await cache.InvalidateAsync(logger, CacheKeys.Assignment(id), cancellationToken);
 
         return assignment;
     }

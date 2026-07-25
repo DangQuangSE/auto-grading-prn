@@ -15,6 +15,9 @@ using AutoGrading.Grading.Api.OpenCode;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using CatalogGrpcClient = AutoGrading.Catalog.Api.Grpc.Catalog.CatalogClient;
+
+AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -39,9 +42,12 @@ builder.Services.Configure<ServicesOptions>(builder.Configuration.GetSection(Ser
 var servicesOptions = builder.Configuration.GetSection(ServicesOptions.SectionName).Get<ServicesOptions>() ?? new ServicesOptions();
 
 builder.Services.AddTransient<ServiceAuthHandler>();
-builder.Services.AddHttpClient<ICatalogApiClient, CatalogApiClient>(client =>
-        client.BaseAddress = new Uri(servicesOptions.CatalogApiBaseUrl))
-    .AddHttpMessageHandler<ServiceAuthHandler>();
+builder.Services.AddGrpcClient<CatalogGrpcClient>(options =>
+        options.Address = servicesOptions.GetCatalogGrpcAddress())
+    .ConfigureChannel(options => options.UnsafeUseInsecureChannelCallCredentials = true)
+    .AddCallCredentials((_, metadata, serviceProvider) =>
+        CatalogGrpcAuthenticator.AttachServiceToken(serviceProvider.GetRequiredService<JwtTokenGenerator>(), metadata));
+builder.Services.AddScoped<ICatalogApiClient, CatalogApiClient>();
 builder.Services.AddHttpClient<ISubmissionApiClient, SubmissionApiClient>(client =>
         client.BaseAddress = new Uri(servicesOptions.SubmissionApiBaseUrl))
     .AddHttpMessageHandler<ServiceAuthHandler>();

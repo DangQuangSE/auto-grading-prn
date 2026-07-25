@@ -18,16 +18,18 @@ docker compose ps   # tất cả service phải "healthy"
 
 Cổng đã map ra host:
 
-| Service | Port | Swagger | Hangfire |
-| --- | --- | --- | --- |
-| Gateway | 5500 | `/swagger` | - |
-| Identity | 5001 | `/swagger` | - |
-| Catalog | 5002 | `/swagger` | `/hangfire` |
-| Submission | 5003 | `/swagger` | `/hangfire` |
-| Grading | 5004 | `/swagger` | `/hangfire` |
-| Notification | 5005 | `/swagger` | - |
-| user-web | 5173 | - | - |
-| admin-web | 5174 | - | - |
+| Service | REST Port | gRPC Port | Swagger | Hangfire |
+| --- | --- | --- | --- | --- |
+| Gateway | 5500 | — | `/swagger` | - |
+| Identity | 5001 | — | `/swagger` | - |
+| Catalog | 5002 | 5012 | `/swagger` | `/hangfire` |
+| Submission | 5003 | — | `/swagger` | `/hangfire` |
+| Grading | 5004 | — | `/swagger` | `/hangfire` |
+| Notification | 5005 | — | `/swagger` | - |
+| user-web | 5173 | — | - | - |
+| admin-web | 5174 | — | - | - |
+
+**Lưu ý:** Catalog gRPC port (5012) dùng cho internal Grading↔Catalog calls (HTTP/2 h2c), không expose qua Gateway.
 
 Mở sẵn 2 tab Hangfire (`localhost:5003/hangfire`, `localhost:5004/hangfire`) trong lúc demo
 để chỉ trực quan job `ExtractionJob` / `AiGradingJob` chạy async — rất ấn tượng khi demo.
