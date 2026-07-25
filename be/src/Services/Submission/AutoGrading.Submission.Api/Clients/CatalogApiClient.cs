@@ -1,25 +1,34 @@
-using System.Net.Http.Json;
+using AutoGrading.Catalog.Api.Grpc;
 using AutoGrading.SubmissionSvc.Api.Interfaces;
+using Grpc.Core;
+using CatalogGrpcClient = AutoGrading.Catalog.Api.Grpc.Catalog.CatalogClient;
 
 namespace AutoGrading.SubmissionSvc.Api.Clients;
 
-public sealed class CatalogApiClient(HttpClient httpClient) : ICatalogApiClient
+public sealed class CatalogApiClient(CatalogGrpcClient client) : ICatalogApiClient
 {
     public async Task<AssignmentDto?> GetAssignmentAsync(Guid assignmentId, CancellationToken cancellationToken)
     {
-        var response = await httpClient.GetAsync($"/assignments/{assignmentId}", cancellationToken);
-        if (response.StatusCode == System.Net.HttpStatusCode.NotFound) return null;
-        response.EnsureSuccessStatusCode();
-        return await response.Content.ReadFromJsonAsync<AssignmentDto>(cancellationToken: cancellationToken);
+        try
+        {
+            var reply = await client.GetAssignmentAsync(
+                new GetAssignmentRequest { AssignmentId = assignmentId.ToString() },
+                cancellationToken: cancellationToken);
+
+            return new AssignmentDto(Guid.Parse(reply.Id), Guid.Parse(reply.SubjectId), reply.MaxAttempts);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+        {
+            return null;
+        }
     }
 
     public async Task<HashSet<Guid>> GetLecturerStudentIdsAsync(Guid lecturerId, Guid subjectId, CancellationToken cancellationToken)
     {
-        var response = await httpClient.GetAsync(
-            $"/enrollments/lecturer-student-ids?subjectId={subjectId}&lecturerId={lecturerId}",
-            cancellationToken);
-        response.EnsureSuccessStatusCode();
-        var ids = await response.Content.ReadFromJsonAsync<List<Guid>>(cancellationToken: cancellationToken);
-        return ids is null ? [] : [.. ids];
+        var reply = await client.GetLecturerStudentIdsAsync(
+            new GetLecturerStudentIdsRequest { SubjectId = subjectId.ToString(), LecturerId = lecturerId.ToString() },
+            cancellationToken: cancellationToken);
+
+        return [.. reply.StudentIds.Select(Guid.Parse)];
     }
 }

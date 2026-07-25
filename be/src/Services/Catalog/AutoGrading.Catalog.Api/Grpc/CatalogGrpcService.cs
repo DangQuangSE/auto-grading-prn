@@ -80,6 +80,7 @@ public sealed class CatalogGrpcService(
             Id = assignment.Id.ToString(),
             SubjectId = assignment.SubjectId.ToString(),
             Title = assignment.Title,
+            MaxAttempts = assignment.MaxAttempts,
         };
 
         if (assignment.Description is not null)

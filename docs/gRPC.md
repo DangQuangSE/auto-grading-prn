@@ -1,7 +1,7 @@
 # gRPC từ số 0 — áp vào chính code của bạn
 
 Tài liệu này giải thích gRPC từ khái niệm nền tảng, dùng làm tài liệu thuyết trình cho tính năng
-gRPC giữa Grading và Catalog. Mọi ví dụ code đều trích trực tiếp từ repo, không phải code mẫu.
+gRPC giữa Grading/Submission và Catalog. Mọi ví dụ code đều trích trực tiếp từ repo, không phải code mẫu.
 
 Liên quan: `docs/grpc_manual_test.md` (hướng dẫn test thủ công), `docs/ARCHITECTURE.md`,
 `plans/catalog-grading-grpc/plan.md`, `be/src/Services/Catalog/AutoGrading.Catalog.Api/Protos/catalog.proto`.
@@ -24,7 +24,7 @@ So sánh trực tiếp với REST — vì REST là thứ Submission/Notification
 | Hợp đồng (contract) | Không bắt buộc — Swagger là tài liệu, không phải luật | File `.proto` — **bắt buộc**, sai kiểu là lỗi biên dịch |
 | Sinh code | Không tự động (trừ khi tự generate từ OpenAPI) | Tự động — build là ra client + server stub |
 
-Khi Grading gọi Catalog qua REST (cách cũ), nó gửi:
+Khi Submission (trước đây) hay Grading gọi Catalog qua REST, chúng gửi:
 ```
 GET http://catalog-api:8080/assignments/a2e9974f-...
 ```
@@ -392,9 +392,9 @@ lecturer đăng nhập, danh tính lấy thẳng từ claim trong JWT, không ti
 
 ## 9. Tóm tắt 1 câu (nếu thầy chỉ hỏi 1 câu)
 
-> Grading và Catalog thống nhất trước 1 file `.proto` mô tả 3 hàm. Lúc build, mỗi bên tự sinh code
-> từ file đó — Catalog sinh ra khung server để cắm business logic có sẵn vào, Grading sinh ra 1
-> client đã biết cách gọi mạng. Khi `AiGradingJob` cần dữ liệu, nó gọi thẳng hàm C#
+> Catalog, Grading, và Submission thống nhất trước 1 file `.proto` mô tả 3 hàm. Lúc build, mỗi bên tự sinh code
+> từ file đó — Catalog sinh ra khung server để cắm business logic có sẵn vào, Grading/Submission sinh ra 1
+> client đã biết cách gọi mạng. Khi `AiGradingJob` hay Submission cần dữ liệu assignment, chúng gọi thẳng hàm C#
 > (`GetAssignmentAsync`) như gọi hàm local; bên dưới, stub tự serialize sang nhị phân protobuf, gắn
 > kèm JWT vào metadata, gửi qua HTTP/2 tới cổng gRPC riêng (8081) của Catalog — tách biệt hoàn toàn
 > với cổng REST cũ (8080) vẫn phục vụ song song, không đổi.

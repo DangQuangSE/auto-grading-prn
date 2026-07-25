@@ -156,7 +156,7 @@ services:
       Minio__SecretKey: ${MINIO_ROOT_PASSWORD}
       Minio__UseSsl: "false"
       Minio__BucketName: autograding
-      Services__CatalogApiBaseUrl: http://catalog-api:8080
+      Services__CatalogGrpcAddress: http://catalog-api:8081
     ports:
       - "5003:8080"
     depends_on:
