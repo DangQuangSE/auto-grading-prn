@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace AutoGrading.Catalog.Api.Tests.Grpc;
 
@@ -21,10 +22,17 @@ public class CatalogGrpcServiceTests
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options;
         var db = new CatalogDbContext(options);
+        var cache = new FakeCacheService();
 
         var service = new CatalogGrpcService(
-            new AssignmentService(new AssignmentRepository(db)),
-            new RubricService(new RubricRepository(db)),
+            new AssignmentService(
+                new AssignmentRepository(db, cache, NullLogger<AssignmentRepository>.Instance),
+                cache,
+                NullLogger<AssignmentService>.Instance),
+            new RubricService(
+                new RubricRepository(db, cache, NullLogger<RubricRepository>.Instance),
+                cache,
+                NullLogger<RubricService>.Instance),
             new EnrollmentService(new EnrollmentRepository(db)));
 
         return (db, service);
@@ -177,6 +185,19 @@ public class CatalogGrpcServiceTests
     }
 
     [Fact]
+    public void GetCriteriaForAssignment_IsGatedToServiceRoleOnly()
+    {
+        var method = typeof(CatalogGrpcService).GetMethod(
+            nameof(CatalogGrpcService.GetCriteriaForAssignment),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!;
+
+        var attribute = method.GetCustomAttribute<AuthorizeAttribute>();
+
+        Assert.NotNull(attribute);
+        Assert.Equal("service", attribute!.Roles);
+    }
+
+    [Fact]
     public void GetLecturerStudentIds_IsGatedToLecturerAndServiceRolesOnly()
     {
         var method = typeof(CatalogGrpcService).GetMethod(
@@ -248,6 +269,24 @@ public class CatalogGrpcServiceTests
     {
         var method = typeof(CatalogGrpcService).GetMethod(
             nameof(CatalogGrpcService.GetLecturerStudentIds),
+            BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!;
+        var attribute = method.GetCustomAttribute<AuthorizeAttribute>()!;
+
+        var allowed = await EvaluateAsync(attribute, CreatePrincipal(role));
+
+        Assert.Equal(expectedAllowed, allowed);
+    }
+
+    [Theory]
+    [InlineData("student", false)]
+    [InlineData("admin", false)]
+    [InlineData("lecturer", false)]
+    [InlineData(null, false)]
+    [InlineData("service", true)]
+    public async Task GetCriteriaForAssignment_RoleGate_RejectsCallersWithoutServiceRole(string? role, bool expectedAllowed)
+    {
+        var method = typeof(CatalogGrpcService).GetMethod(
+            nameof(CatalogGrpcService.GetCriteriaForAssignment),
             BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)!;
         var attribute = method.GetCustomAttribute<AuthorizeAttribute>()!;
 

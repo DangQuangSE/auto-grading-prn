@@ -31,17 +31,15 @@ public sealed class CatalogGrpcService(
         return ToReply(assignment);
     }
 
+    [Authorize(Roles = "service")]
     public override async Task<GetCriteriaForAssignmentReply> GetCriteriaForAssignment(
         GetCriteriaForAssignmentRequest request, ServerCallContext context)
     {
         var assignmentId = Guid.Parse(request.AssignmentId);
-        var caller = context.GetHttpContext().User;
 
-        var rubrics = await rubricService.ListAsync(
-            subjectId: null, assignmentId, caller.GetUserId(), caller.IsInRole("admin"), context.CancellationToken);
+        var criteria = await rubricService.GetCriteriaForAssignmentAsync(assignmentId, context.CancellationToken);
 
         var reply = new GetCriteriaForAssignmentReply();
-        var criteria = rubrics.FirstOrDefault()?.Criteria ?? [];
         reply.Criteria.AddRange(criteria.Select(ToReply));
         return reply;
     }

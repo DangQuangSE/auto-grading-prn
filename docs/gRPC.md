@@ -322,6 +322,33 @@ ASP.NET Core coi `[Authorize]` là chung 1 hệ thống cho cả Minimal API (RE
 chính là lý do gắn gRPC vào **cùng 1 container** Catalog thay vì tách service riêng: tái sử dụng
 toàn bộ authentication pipeline đã có, không phải build lại.
 
+**Ví dụ về role-based access control (RBAC):**
+
+```csharp
+[Authorize]
+public sealed class CatalogGrpcService(...) : Catalog.CatalogBase
+{
+    public override async Task<AssignmentReply> GetAssignment(GetAssignmentRequest request, ServerCallContext context)
+    {
+        // Chỉ cần [Authorize] ở lớp — bất kỳ user hoặc service nào có JWT hợp lệ cũng được phép.
+    }
+
+    [Authorize(Roles = "service")]
+    public override async Task<GetCriteriaForAssignmentReply> GetCriteriaForAssignment(
+        GetCriteriaForAssignmentRequest request, ServerCallContext context)
+    {
+        // Chỉ service token (role="service") mới gọi được — bảo vệ dữ liệu tiêu chí chấm điểm khỏi bị công khai.
+    }
+
+    [Authorize(Roles = "lecturer,service")]
+    public override async Task<GetLecturerStudentIdsReply> GetLecturerStudentIds(
+        GetLecturerStudentIdsRequest request, ServerCallContext context)
+    {
+        // Lecturer hoặc service đều được — service cần truyền lecturer_id rõ ràng.
+    }
+}
+```
+
 Bên trong `GetLecturerStudentIds`, danh tính caller lấy từ cùng `ClaimsPrincipal` mà REST endpoint
 cũng dùng:
 

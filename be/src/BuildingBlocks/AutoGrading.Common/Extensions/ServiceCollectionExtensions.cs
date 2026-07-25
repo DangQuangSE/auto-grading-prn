@@ -1,9 +1,11 @@
 using AutoGrading.Common.Auth;
+using AutoGrading.Common.Caching;
 using AutoGrading.Common.Messaging;
 using AutoGrading.Common.OpenCode;
 using AutoGrading.Common.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using StackExchange.Redis;
 
 namespace AutoGrading.Common.Extensions;
 
@@ -41,6 +43,26 @@ public static class ServiceCollectionExtensions
     {
         services.Configure<OpenCodeOptions>(configuration.GetSection(OpenCodeOptions.SectionName));
         services.AddHttpClient<IOpenCodeClient, OpenCodeClient>();
+
+        return services;
+    }
+
+    /// <summary>Registers the Redis-backed <see cref="ICacheService"/>, bound to the "Redis" config section.
+    /// <c>AbortOnConnectFail = false</c> so the host can still start even if Redis is unreachable at boot —
+    /// callers must treat cache operations as best-effort, never a hard dependency.</summary>
+    public static IServiceCollection AddCacheService(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<RedisCacheOptions>(configuration.GetSection(RedisCacheOptions.SectionName));
+
+        services.AddSingleton<IConnectionMultiplexer>(sp =>
+        {
+            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<RedisCacheOptions>>().Value;
+            var configurationOptions = ConfigurationOptions.Parse(options.ConnectionString);
+            configurationOptions.AbortOnConnectFail = false;
+
+            return ConnectionMultiplexer.Connect(configurationOptions);
+        });
+        services.AddSingleton<ICacheService, RedisCacheService>();
 
         return services;
     }

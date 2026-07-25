@@ -7,6 +7,8 @@ public interface IAssignmentService
 {
     Task<PagedResult<Assignment>> ListAsync(Guid? subjectId, int? page, int? pageSize, CancellationToken cancellationToken);
 
+    /// <summary>Cache-aside: reads through Redis (30-minute TTL) before falling back to the DB. A cache miss or
+    /// Redis being unreachable transparently falls back to the DB read — never fails the call (FR-05).</summary>
     Task<Assignment?> GetByIdAsync(Guid id, CancellationToken cancellationToken);
 
     /// <summary>Throws <see cref="CatalogValidationException"/> if <paramref name="maxAttempts"/> &lt; 1.</summary>

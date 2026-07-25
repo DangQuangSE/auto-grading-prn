@@ -1,16 +1,40 @@
+using AutoGrading.Catalog.Api.Caching;
 using AutoGrading.Catalog.Api.Constant;
 using AutoGrading.Catalog.Api.Domain;
 using AutoGrading.Catalog.Api.Interfaces;
+using AutoGrading.Common.Caching;
 
 namespace AutoGrading.Catalog.Api.Service;
 
-public sealed class RubricService(IRubricRepository repo) : IRubricService
+public sealed class RubricService(
+    IRubricRepository repo,
+    ICacheService cache,
+    ILogger<RubricService> logger) : IRubricService
 {
     public Task<List<Rubric>> ListAsync(Guid? subjectId, Guid? assignmentId, Guid? userId, bool isAdmin, CancellationToken cancellationToken) =>
         repo.ListAsync(subjectId, assignmentId, userId, isAdmin, cancellationToken);
 
     public Task<Rubric?> GetByIdAsync(Guid id, bool includeCriteria, CancellationToken cancellationToken) =>
         repo.GetByIdAsync(id, includeCriteria, cancellationToken);
+
+    public Task<List<RubricCriterion>> GetCriteriaForAssignmentAsync(Guid assignmentId, CancellationToken cancellationToken) =>
+        cache.GetOrSetAsync(
+            logger,
+            CacheKeys.Criteria(assignmentId),
+            CacheKeys.DefaultTtl,
+            async ct =>
+            {
+                // No caller identity is threaded through: the cache key has none, so this must only ever
+                // resolve the Confirmed-visible view regardless of who calls GetCriteriaForAssignmentAsync
+                // (see IRubricService for the enforced invariant). userId: Guid.Empty is a sentinel that no
+                // real LecturerId ever equals (Identity never issues an all-zero id), so the repository's
+                // "Confirmed OR LecturerId == userId" filter collapses to Confirmed-only here — unlike
+                // userId: null, which would incorrectly match Draft school-wide rubrics (LecturerId is null
+                // for those until a lecturer claims them).
+                var rubrics = await repo.ListAsync(subjectId: null, assignmentId, userId: Guid.Empty, isAdmin: false, ct);
+                return rubrics.FirstOrDefault()?.Criteria ?? [];
+            },
+            cancellationToken);
 
     public async Task<Guid?> AuthorizeUploadAsync(Guid? assignmentId, RubricScope scope, Guid userId, bool isAdmin, CancellationToken cancellationToken)
     {

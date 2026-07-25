@@ -1,11 +1,13 @@
+using AutoGrading.Catalog.Api.Caching;
 using AutoGrading.Catalog.Api.Constant;
 using AutoGrading.Catalog.Api.Domain;
 using AutoGrading.Catalog.Api.Interfaces;
+using AutoGrading.Common.Caching;
 using Microsoft.EntityFrameworkCore;
 
 namespace AutoGrading.Catalog.Api.Repository;
 
-public sealed class RubricRepository(CatalogDbContext db) : IRubricRepository
+public sealed class RubricRepository(CatalogDbContext db, ICacheService cache, ILogger<RubricRepository> logger) : IRubricRepository
 {
     public async Task<List<Rubric>> ListAsync(Guid? subjectId, Guid? assignmentId, Guid? userId, bool isAdmin, CancellationToken cancellationToken)
     {
@@ -44,6 +46,7 @@ public sealed class RubricRepository(CatalogDbContext db) : IRubricRepository
     {
         db.Rubrics.Add(rubric);
         await db.SaveChangesAsync(cancellationToken);
+        await InvalidateCriteriaAsync(rubric, cancellationToken);
         return rubric;
     }
 
@@ -54,6 +57,7 @@ public sealed class RubricRepository(CatalogDbContext db) : IRubricRepository
     public async Task<Rubric> UpdateAsync(Rubric rubric, CancellationToken cancellationToken)
     {
         await db.SaveChangesAsync(cancellationToken);
+        await InvalidateCriteriaAsync(rubric, cancellationToken);
         return rubric;
     }
 
@@ -61,20 +65,15 @@ public sealed class RubricRepository(CatalogDbContext db) : IRubricRepository
     {
         var newCriteria = db.ReplaceRubricCriteria(rubric, criteria);
         await TrySaveChangesAsync(rubric.Id, cancellationToken);
+        await InvalidateCriteriaAsync(rubric, cancellationToken);
         return newCriteria;
     }
 
-    public async Task<Rubric> ConfirmAsync(Rubric rubric, CancellationToken cancellationToken)
-    {
-        await TrySaveChangesAsync(rubric.Id, cancellationToken);
-        return rubric;
-    }
+    public Task<Rubric> ConfirmAsync(Rubric rubric, CancellationToken cancellationToken) =>
+        SaveAndInvalidateAsync(rubric, cancellationToken);
 
-    public async Task<Rubric> UnlockAsync(Rubric rubric, CancellationToken cancellationToken)
-    {
-        await TrySaveChangesAsync(rubric.Id, cancellationToken);
-        return rubric;
-    }
+    public Task<Rubric> UnlockAsync(Rubric rubric, CancellationToken cancellationToken) =>
+        SaveAndInvalidateAsync(rubric, cancellationToken);
 
     public Task<Rubric?> DownloadFileAsync(Guid id, CancellationToken cancellationToken) =>
         db.Rubrics.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, cancellationToken);
@@ -94,4 +93,19 @@ public sealed class RubricRepository(CatalogDbContext db) : IRubricRepository
                 string.Format(CatalogConstants.RubricConcurrentModification, rubricId));
         }
     }
+
+    private async Task<Rubric> SaveAndInvalidateAsync(Rubric rubric, CancellationToken cancellationToken)
+    {
+        await TrySaveChangesAsync(rubric.Id, cancellationToken);
+        await InvalidateCriteriaAsync(rubric, cancellationToken);
+        return rubric;
+    }
+
+    /// <summary>No-op when the rubric isn't tied to an assignment — <see cref="CacheKeys.Criteria"/> is keyed by
+    /// assignment id, and a rubric with a null <see cref="Rubric.AssignmentId"/> has no corresponding cache entry
+    /// to invalidate.</summary>
+    private Task InvalidateCriteriaAsync(Rubric rubric, CancellationToken cancellationToken) =>
+        rubric.AssignmentId is Guid assignmentId
+            ? cache.InvalidateAsync(logger, CacheKeys.Criteria(assignmentId), cancellationToken)
+            : Task.CompletedTask;
 }

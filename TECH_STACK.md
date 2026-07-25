@@ -120,8 +120,8 @@ Tài liệu này liệt kê toàn bộ công nghệ/công cụ đang dùng trong
 ## 8. Hạ tầng chạy (Infrastructure)
 
 ### Docker + Docker Compose
-- **Dùng để làm gì:** đóng gói và chạy toàn bộ hệ thống (9 container: 5 service + Gateway + SQL Server + RabbitMQ + MinIO, cộng 2 container FE tùy chọn) bằng 1 lệnh `docker compose up`, không cần cài .NET/SQL Server/RabbitMQ/MinIO thật lên máy.
-- **Nếu không có:** phải tự cài đặt và cấu hình từng phần mềm (SQL Server, RabbitMQ, MinIO...) trực tiếp lên máy hoặc máy chủ, chạy từng service bằng `dotnet run` tay, khó đồng bộ môi trường dev giữa các máy khác nhau trong nhóm.
+- **Dùng để làm gì:** đóng gói và chạy toàn bộ hệ thống (12 container: 5 service + Gateway + SQL Server + RabbitMQ + Redis + MinIO, cộng 2 container FE) bằng 1 lệnh `docker compose up`, không cần cài .NET/SQL Server/RabbitMQ/Redis/MinIO thật lên máy.
+- **Nếu không có:** phải tự cài đặt và cấu hình từng phần mềm (SQL Server, RabbitMQ, Redis, MinIO...) trực tiếp lên máy hoặc máy chủ, chạy từng service bằng `dotnet run` tay, khó đồng bộ môi trường dev giữa các máy khác nhau trong nhóm.
 
 ### Nginx (trong Dockerfile của `admin-web`/`user-web`)
 - **Dùng để làm gì:** serve file tĩnh (HTML/JS/CSS) sau khi Vite build xong, khi chạy 2 app FE qua Docker (khác với `npm run dev` chạy Vite dev server trực tiếp).

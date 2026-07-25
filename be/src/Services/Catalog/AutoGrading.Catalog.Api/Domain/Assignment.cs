@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace AutoGrading.Catalog.Api.Domain;
 
 public class Assignment
@@ -10,6 +12,9 @@ public class Assignment
     public int MaxAttempts { get; set; } = 1;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 
+    [JsonIgnore]
     public Subject? Subject { get; set; }
+
+    [JsonIgnore]
     public List<Rubric> Rubrics { get; set; } = new();
 }

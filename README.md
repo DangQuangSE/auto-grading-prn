@@ -8,10 +8,10 @@ Platform for grading IT project reports and architecture diagrams. Split into an
   - `fe/admin-web` — admin app. See `fe/admin-web/README.md`.
 - `be/` — ASP.NET Core microservices backend (Identity, Catalog, Submission, Grading,
   Notification) behind a YARP API Gateway, replacing the previous Supabase backend
-  (Auth/Postgres/Storage/Edge Functions) with SQL Server, RabbitMQ, MinIO, and Hangfire.
+  (Auth/Postgres/Storage/Edge Functions) with SQL Server, RabbitMQ, MinIO, Redis, and Hangfire.
   See `be/README.md`.
 - `docker-compose.yml` (root) — runs the full stack: gateway, all 5 services, SQL Server,
-  RabbitMQ, MinIO, and both frontends.
+  RabbitMQ, MinIO, Redis, and both frontends.
 
 The target architecture, functional requirements, event/job tables, and requirements
 checklist are documented in `requirment.md`. The refactor from the original single-source

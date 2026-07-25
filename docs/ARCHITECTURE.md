@@ -334,23 +334,24 @@ File: `be/src/BuildingBlocks/AutoGrading.Contracts/Enums/AppRole.cs`
 
 ### 7.1 Docker Compose
 
-**File:** `docker-compose.yml` — **11 containers**, network `autograding-net`.
+**File:** `docker-compose.yml` — **12 containers**, network `autograding-net`.
 
 | # | Container | Image | Ports | Depends on |
 |---|-----------|-------|-------|------------|
 | 1 | **sqlserver** | `mcr.microsoft.com/mssql/server:2022-latest` | `1433:1433` | — |
 | 2 | **rabbitmq** | `rabbitmq:3-management-alpine` | `5672:5672`, `15672:15672` | — |
-| 3 | **minio** | `minio/minio` | `9000:9000`, `9001:9001` | — |
-| 4 | **identity-api** | Dockerfile | `5001:8080` | sqlserver, rabbitmq |
-| 5 | **catalog-api** | Dockerfile | `5002:8080`, `5012:8081` (gRPC) | sqlserver, rabbitmq, minio |
-| 6 | **submission-api** | Dockerfile | `5003:8080` | sqlserver, rabbitmq, minio, catalog |
-| 7 | **grading-api** | Dockerfile | `5004:8080` | sqlserver, rabbitmq, catalog, submission |
-| 8 | **notification-api** | Dockerfile | `5005:8080` | sqlserver, rabbitmq |
-| 9 | **gateway** | Dockerfile | `5500:8080` | 5 backend APIs |
-| 10 | **user-web** | Dockerfile (node + nginx) | `5173:80` | gateway |
-| 11 | **admin-web** | Dockerfile (node + nginx) | `5174:80` | gateway |
+| 3 | **redis** | `redis:7-alpine` | — | — |
+| 4 | **minio** | `minio/minio` | `9000:9000`, `9001:9001` | — |
+| 5 | **identity-api** | Dockerfile | `5001:8080` | sqlserver, rabbitmq |
+| 6 | **catalog-api** | Dockerfile | `5002:8080`, `5012:8081` (gRPC) | sqlserver, rabbitmq, minio, redis |
+| 7 | **submission-api** | Dockerfile | `5003:8080` | sqlserver, rabbitmq, minio, catalog |
+| 8 | **grading-api** | Dockerfile | `5004:8080` | sqlserver, rabbitmq, catalog, submission |
+| 9 | **notification-api** | Dockerfile | `5005:8080` | sqlserver, rabbitmq |
+| 10 | **gateway** | Dockerfile | `5500:8080` | 5 backend APIs |
+| 11 | **user-web** | Dockerfile (node + nginx) | `5173:80` | gateway |
+| 12 | **admin-web** | Dockerfile (node + nginx) | `5174:80` | gateway |
 
-**Lưu ý:** `catalog-api` healthcheck (lần cuối cập nhật 2026-07-25) giờ probes cả REST `/health` và gRPC health service (`grpc_health_probe -addr=localhost:8081`).
+**Lưu ý:** `catalog-api` healthcheck (lần cuối cập nhật 2026-07-25) giờ probes cả REST `/health` và gRPC health service (`grpc_health_probe -addr=localhost:8081`). `catalog-api` phụ thuộc Redis để cache gRPC lookup responses (30-min TTL, cache-aside pattern).
 
 ### 7.2 Dockerfiles
 
@@ -475,6 +476,7 @@ Student xem kết quả (user-web)
 | **Message Queue** | RabbitMQ (topic exchange) | 5 service | `appsettings.json:RabbitMq` |
 | **ORM** | EF Core 8.0.10 | 5 service | `Data/*DbContext.cs` (Submission, Grading, Identity, Catalog: `Repository/*DbContext.cs`, per the ongoing layered-architecture rollout — only Notification remains on `Data/`) |
 | **Database** | SQL Server 2022 | 5 DB riêng | `appsettings.json:ConnectionStrings` |
+| **Caching** | Redis 7 | 1 service (Catalog) | `appsettings.json:Redis` |
 | **Object Storage** | MinIO | 2 service (Catalog, Submission) | `appsettings.json:Minio` |
 | **Background Jobs** | Hangfire 1.8.14 | 3 service (Catalog, Submission, Grading) | `Program.cs` |
 | **Auth** | JWT Bearer + Google OAuth | 6 service | `appsettings.json:Jwt` |

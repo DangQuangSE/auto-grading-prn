@@ -30,6 +30,7 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddEventBus(builder.Configuration);
 builder.Services.AddObjectStorage(builder.Configuration);
 builder.Services.AddOpenCodeClient(builder.Configuration);
+builder.Services.AddCacheService(builder.Configuration);
 
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase)));
