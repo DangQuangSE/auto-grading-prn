@@ -21,6 +21,7 @@ message AssignmentReply {
   string subject_id = 2;
   string title = 3;
   optional string description = 4;
+  int32 max_attempts = 5;
 }
 
 message GetCriteriaForAssignmentRequest {

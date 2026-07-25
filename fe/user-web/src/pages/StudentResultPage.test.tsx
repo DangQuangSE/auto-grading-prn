@@ -10,6 +10,7 @@ import * as AuthProviderModule from "../providers/AuthProvider";
 import * as gradingService from "../services/gradingService";
 import * as subjectService from "../services/subjectService";
 import * as submissionService from "../services/submissionService";
+import type { SubmissionRecord } from "../services/submissionService";
 import { StudentResultPage } from "./StudentResultPage";
 
 const fakeConnection = {
@@ -55,7 +56,7 @@ const mockedApiClient = vi.mocked(apiClient);
 
 const session = { token: "t", user: { id: "student-1", email: "alice@school.edu", role: "student" as const } };
 
-const submission = {
+const submission: SubmissionRecord = {
   id: "sub-1",
   assignmentId: "assign-1",
   studentId: "student-1",

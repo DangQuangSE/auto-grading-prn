@@ -193,6 +193,8 @@ Gateway là điểm vào duy nhất cho frontend (`localhost:5500`). YARP địn
 | **Grading** | → **Catalog** | `GetAssignment` | `catalog.proto` | Service JWT (CallCredentials) |
 | **Grading** | → **Catalog** | `GetCriteriaForAssignment` | `catalog.proto` | Service JWT (CallCredentials) |
 | **Grading** | → **Catalog** | `GetLecturerStudentIds` | `catalog.proto` | Service JWT (CallCredentials) |
+| **Submission** | → **Catalog** | `GetAssignment` | `catalog.proto` | Service JWT (CallCredentials) |
+| **Submission** | → **Catalog** | `GetLecturerStudentIds` | `catalog.proto` | Service JWT (CallCredentials) |
 
 **Proto File:** `be/src/Services/Catalog/AutoGrading.Catalog.Api/Protos/catalog.proto` — referenced by cả Catalog.Api (server codegen) và Grading.Api (client codegen).
 
@@ -201,8 +203,8 @@ Gateway là điểm vào duy nhất cho frontend (`localhost:5500`). YARP địn
 | Source | Client | BaseUrl/Addr (dev) | Protocol | Handler |
 |--------|--------|------------------|----------|---------|
 | Grading | `ISubmissionApiClient` | `http://localhost:5226` | HTTP | `ServiceAuthHandler` (grading) |
-| Grading | `ICatalogApiClient` | `http://localhost:5029` (gRPC: `:8081` internal) | **gRPC** | `CatalogGrpcAuthenticator` (interceptor) |
-| Submission | `ICatalogApiClient` | `http://localhost:5002` | HTTP | `ServiceAuthHandler` (submission) |
+| Grading | `ICatalogApiClient` | `localhost:8081` (gRPC internal) | **gRPC** | `CatalogGrpcAuthenticator` (interceptor) |
+| Submission | `ICatalogApiClient` | `localhost:8081` (gRPC internal) | **gRPC** | `CatalogGrpcAuthenticator` (interceptor) |
 
 ### 3.4 External API — OpenCode / OpenRouter
 

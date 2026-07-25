@@ -46,7 +46,7 @@ builder.Services.AddGrpcClient<CatalogGrpcClient>(options =>
         options.Address = servicesOptions.GetCatalogGrpcAddress())
     .ConfigureChannel(options => options.UnsafeUseInsecureChannelCallCredentials = true)
     .AddCallCredentials((_, metadata, serviceProvider) =>
-        CatalogGrpcAuthenticator.AttachServiceToken(serviceProvider.GetRequiredService<JwtTokenGenerator>(), metadata));
+        CatalogGrpcAuthenticator.AttachServiceToken(serviceProvider.GetRequiredService<JwtTokenGenerator>(), "grading", metadata));
 builder.Services.AddScoped<ICatalogApiClient, CatalogApiClient>();
 builder.Services.AddHttpClient<ISubmissionApiClient, SubmissionApiClient>(client =>
         client.BaseAddress = new Uri(servicesOptions.SubmissionApiBaseUrl))

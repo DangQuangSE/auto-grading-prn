@@ -67,7 +67,7 @@ public class CatalogGrpcServiceTests
     {
         var (db, service) = CreateService();
         var subjectId = Guid.NewGuid();
-        var assignment = new Assignment { SubjectId = subjectId, Title = "Assignment 1", Description = "desc" };
+        var assignment = new Assignment { SubjectId = subjectId, Title = "Assignment 1", Description = "desc", MaxAttempts = 3 };
         db.Assignments.Add(assignment);
         await db.SaveChangesAsync();
 
@@ -79,6 +79,7 @@ public class CatalogGrpcServiceTests
         Assert.Equal(subjectId.ToString(), reply.SubjectId);
         Assert.Equal("Assignment 1", reply.Title);
         Assert.Equal("desc", reply.Description);
+        Assert.Equal(3, reply.MaxAttempts);
     }
 
     [Fact]
