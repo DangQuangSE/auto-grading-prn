@@ -1,7 +1,7 @@
 # Architecture Documentation — AutoGrading
 
 > File này tổng hợp toàn bộ tech stack, cấu hình, và cách nối dây giữa các service trong dự án.
-> Cập nhật lần cuối: 2026-07-23
+> Cập nhật lần cuối: 2026-07-25 (gRPC Grading↔Catalog integration)
 
 ---
 
@@ -72,18 +72,20 @@ Hệ thống gồm **6 backend services (.NET 8)**, **2 frontends (React + Vite)
 
 ### 2.3 Ports
 
-| Service | Dev HTTP | Dev HTTPS | Docker internal |
-|---------|----------|-----------|-----------------|
-| **Gateway** | `:5213` | `:7203` | `:5500` (exposed) → `:8080` |
-| **Identity** | `:5265` | `:7259` | `:8080` → `:5001` (exposed) |
-| **Catalog** | `:5029` | `:7234` | `:8080` → `:5002` (exposed) |
-| **Submission** | `:5226` | `:7194` | `:8080` → `:5003` (exposed) |
-| **Grading** | `:5108` | `:7077` | `:8080` → `:5004` (exposed) |
-| **Notification** | `:5280` | `:7039` | `:8080` → `:5005` (exposed) |
-| **user-web** | `:5173` | — | `:80` → `:5173` (exposed) |
-| **admin-web** | `:5174` | — | `:80` → `:5174` (exposed) |
+| Service | Dev HTTP | Dev HTTPS | Docker REST | Docker gRPC |
+|---------|----------|-----------|-------------|------------|
+| **Gateway** | `:5213` | `:7203` | `:5500` (exposed) → `:8080` | — |
+| **Identity** | `:5265` | `:7259` | `:5001` (exposed) → `:8080` | — |
+| **Catalog** | `:5029` | `:7234` | `:5002` (exposed) → `:8080` | `:5012` (exposed) → `:8081` |
+| **Submission** | `:5226` | `:7194` | `:5003` (exposed) → `:8080` | — |
+| **Grading** | `:5108` | `:7077` | `:5004` (exposed) → `:8080` | — |
+| **Notification** | `:5280` | `:7039` | `:5005` (exposed) → `:8080` | — |
+| **user-web** | `:5173` | — | `:80` → `:5173` (exposed) | — |
+| **admin-web** | `:5174` | — | `:80` → `:5174` (exposed) | — |
 
 Cấu hình: `Properties/launchSettings.json` mỗi service + `be/src/Gateway/AutoGrading.Gateway/appsettings.Docker.json`
+
+**Ghi chú gRPC:** Catalog gRPC service (port 8081 internal / 5012 host) dùng HTTP/2 h2c (unencrypted, tin tưởng qua Docker network), chỉ cho internal service-to-service calls, không expose qua Gateway.
 
 ### 2.4 NuGet Packages chính
 
@@ -170,29 +172,37 @@ Gateway là điểm vào duy nhất cho frontend (`localhost:5500`). YARP địn
 
 **Cơ chế:** Service A publish event → RabbitMQ gửi đến queue của từng consumer → mỗi service consume độc lập (pub/sub fan-out). Queue được tạo và bind tại thời điểm `Subscribe<>()`.
 
-### 3.3 HTTP Service-to-Service
+### 3.3 Service-to-Service Communication (HTTP + gRPC)
 
 **Service JWT:** Khác với User JWT, Service JWT có:
 - `sub` = `Guid.Empty`
 - `email` = `"{service}@internal.autograding"`
 - `role` = `"service"`
 
-**Các kết nối HTTP giữa services:**
+**HTTP Service-to-Service calls** (REST):
 
 | Source | → | API Endpoint | DTO trả về | Auth |
 |--------|---|-------------|------------|------|
 | **Grading** | → | `GET /submissions/{id}` | `SubmissionDto` + `ExtractedArtifactDto[]` (Content, ImagesJson) | Service JWT |
-| **Grading** | → | `GET /rubrics?assignmentId={id}` | `RubricCriterionDto[]` | Service JWT |
-| **Grading** | → | `GET /assignments/{id}` | `AssignmentDto` (Title, Description) | Service JWT |
 | **Submission** | → | `GET /assignments/{id}` | `AssignmentDto` (MaxAttempts) | Service JWT |
+
+**gRPC Service-to-Service calls** (protobuf) — 2026-07-25 thêm:
+
+| Source | → | gRPC Method | Proto | Auth |
+|--------|---|-------------|-------|------|
+| **Grading** | → **Catalog** | `GetAssignment` | `catalog.proto` | Service JWT (CallCredentials) |
+| **Grading** | → **Catalog** | `GetCriteriaForAssignment` | `catalog.proto` | Service JWT (CallCredentials) |
+| **Grading** | → **Catalog** | `GetLecturerStudentIds` | `catalog.proto` | Service JWT (CallCredentials) |
+
+**Proto File:** `be/src/Services/Catalog/AutoGrading.Catalog.Api/Protos/catalog.proto` — referenced by cả Catalog.Api (server codegen) và Grading.Api (client codegen).
 
 **Tổng quan DI Registration:**
 
-| Source | Client | BaseUrl (dev) | Handler |
-|--------|--------|---------------|---------|
-| Grading | `ISubmissionApiClient` | `http://localhost:5226` | `ServiceAuthHandler` (grading) |
-| Grading | `ICatalogApiClient` | `http://localhost:5029` | `ServiceAuthHandler` (grading) |
-| Submission | `ICatalogApiClient` | `http://localhost:5002` | `ServiceAuthHandler` (submission) |
+| Source | Client | BaseUrl/Addr (dev) | Protocol | Handler |
+|--------|--------|------------------|----------|---------|
+| Grading | `ISubmissionApiClient` | `http://localhost:5226` | HTTP | `ServiceAuthHandler` (grading) |
+| Grading | `ICatalogApiClient` | `http://localhost:5029` (gRPC: `:8081` internal) | **gRPC** | `CatalogGrpcAuthenticator` (interceptor) |
+| Submission | `ICatalogApiClient` | `http://localhost:5002` | HTTP | `ServiceAuthHandler` (submission) |
 
 ### 3.4 External API — OpenCode / OpenRouter
 
@@ -332,13 +342,15 @@ File: `be/src/BuildingBlocks/AutoGrading.Contracts/Enums/AppRole.cs`
 | 2 | **rabbitmq** | `rabbitmq:3-management-alpine` | `5672:5672`, `15672:15672` | — |
 | 3 | **minio** | `minio/minio` | `9000:9000`, `9001:9001` | — |
 | 4 | **identity-api** | Dockerfile | `5001:8080` | sqlserver, rabbitmq |
-| 5 | **catalog-api** | Dockerfile | `5002:8080` | sqlserver, rabbitmq, minio |
+| 5 | **catalog-api** | Dockerfile | `5002:8080`, `5012:8081` (gRPC) | sqlserver, rabbitmq, minio |
 | 6 | **submission-api** | Dockerfile | `5003:8080` | sqlserver, rabbitmq, minio, catalog |
 | 7 | **grading-api** | Dockerfile | `5004:8080` | sqlserver, rabbitmq, catalog, submission |
 | 8 | **notification-api** | Dockerfile | `5005:8080` | sqlserver, rabbitmq |
 | 9 | **gateway** | Dockerfile | `5500:8080` | 5 backend APIs |
 | 10 | **user-web** | Dockerfile (node + nginx) | `5173:80` | gateway |
 | 11 | **admin-web** | Dockerfile (node + nginx) | `5174:80` | gateway |
+
+**Lưu ý:** `catalog-api` healthcheck (lần cuối cập nhật 2026-07-25) giờ probes cả REST `/health` và gRPC health service (`grpc_health_probe -addr=localhost:8081`).
 
 ### 7.2 Dockerfiles
 
@@ -376,17 +388,21 @@ File: `be/src/BuildingBlocks/AutoGrading.Contracts/Enums/AppRole.cs`
     └─────────┘   └─────────┘   └────────┘   └────────────┘
 ```
 
-### 8.2 HTTP Connections
+### 8.2 Service-to-Service Connections (HTTP + gRPC)
 
 ```
-Grading ──GET /submissions/{id}──→ Submission API
-Grading ──GET /rubrics?assignmentId=──→ Catalog API
-Grading ──GET /assignments/{id}──→ Catalog API
-Submission ──GET /assignments/{id}──→ Catalog API
+HTTP (REST):
+  Grading ──GET /submissions/{id}──→ Submission API
+  Submission ──GET /assignments/{id}──→ Catalog API
+
+gRPC (protobuf) — thêm 2026-07-25:
+  Grading ──GetAssignment (RPC)──→ Catalog API (port 8081)
+  Grading ──GetCriteriaForAssignment (RPC)──→ Catalog API (port 8081)
+  Grading ──GetLecturerStudentIds (RPC)──→ Catalog API (port 8081)
 
 External:
-Grading ──POST /chat/completions──→ OpenCode Zen (opencode.ai)
-Catalog ──POST /chat/completions──→ OpenRouter (openrouter.ai)
+  Grading ──POST /chat/completions──→ OpenCode Zen (opencode.ai)
+  Catalog ──POST /chat/completions──→ OpenRouter (openrouter.ai)
 ```
 
 ### 8.3 MinIO Connections

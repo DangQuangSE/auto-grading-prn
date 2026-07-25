@@ -1,28 +1,54 @@
-using System.Net.Http.Json;
-using System.Text.Json;
+using System.Globalization;
+using AutoGrading.Catalog.Api.Grpc;
 using AutoGrading.Grading.Api.Interfaces;
+using Grpc.Core;
+using CatalogGrpcClient = AutoGrading.Catalog.Api.Grpc.Catalog.CatalogClient;
 
 namespace AutoGrading.Grading.Api.Clients;
 
-public sealed class CatalogApiClient(HttpClient httpClient) : ICatalogApiClient
+public sealed class CatalogApiClient(CatalogGrpcClient client) : ICatalogApiClient
 {
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
     public async Task<IReadOnlyList<RubricCriterionDto>> GetCriteriaForAssignmentAsync(Guid assignmentId, CancellationToken cancellationToken)
     {
-        var rubrics = await httpClient.GetFromJsonAsync<List<RubricDto>>(
-            $"/rubrics?assignmentId={assignmentId}", JsonOptions, cancellationToken);
+        var reply = await client.GetCriteriaForAssignmentAsync(
+            new GetCriteriaForAssignmentRequest { AssignmentId = assignmentId.ToString() },
+            cancellationToken: cancellationToken);
 
-        return rubrics?.FirstOrDefault()?.Criteria ?? [];
+        return reply.Criteria.Select(ToDto).ToList();
     }
 
-    public Task<AssignmentDto?> GetAssignmentAsync(Guid assignmentId, CancellationToken cancellationToken) =>
-        httpClient.GetFromJsonAsync<AssignmentDto>($"/assignments/{assignmentId}", JsonOptions, cancellationToken);
+    public async Task<AssignmentDto?> GetAssignmentAsync(Guid assignmentId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var reply = await client.GetAssignmentAsync(
+                new GetAssignmentRequest { AssignmentId = assignmentId.ToString() },
+                cancellationToken: cancellationToken);
+
+            return new AssignmentDto(
+                Guid.Parse(reply.Id), Guid.Parse(reply.SubjectId), reply.Title, reply.HasDescription ? reply.Description : null);
+        }
+        catch (RpcException ex) when (ex.StatusCode == StatusCode.NotFound)
+        {
+            return null;
+        }
+    }
 
     public async Task<HashSet<Guid>> GetLecturerStudentIdsAsync(Guid lecturerId, Guid subjectId, CancellationToken cancellationToken)
     {
-        var ids = await httpClient.GetFromJsonAsync<List<Guid>>(
-            $"/enrollments/lecturer-student-ids?subjectId={subjectId}&lecturerId={lecturerId}", JsonOptions, cancellationToken);
-        return ids is null ? [] : [.. ids];
+        var reply = await client.GetLecturerStudentIdsAsync(
+            new GetLecturerStudentIdsRequest { SubjectId = subjectId.ToString(), LecturerId = lecturerId.ToString() },
+            cancellationToken: cancellationToken);
+
+        return [.. reply.StudentIds.Select(Guid.Parse)];
     }
+
+    private static RubricCriterionDto ToDto(RubricCriterionReply reply) =>
+        new(
+            Guid.Parse(reply.Id),
+            reply.Code,
+            reply.Name,
+            reply.HasDescription ? reply.Description : null,
+            decimal.Parse(reply.MaxScore, CultureInfo.InvariantCulture),
+            reply.OrderIndex);
 }

@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+option csharp_namespace = "AutoGrading.Catalog.Api.Grpc";
+
+package catalog;
+
+// Thin gRPC surface over Catalog's existing REST-backed domain services — no
+// business logic lives here, only the 3 lookups Grading needs (FR-01).
+service Catalog {
+  rpc GetAssignment (GetAssignmentRequest) returns (AssignmentReply);
+  rpc GetCriteriaForAssignment (GetCriteriaForAssignmentRequest) returns (GetCriteriaForAssignmentReply);
+  rpc GetLecturerStudentIds (GetLecturerStudentIdsRequest) returns (GetLecturerStudentIdsReply);
+}
+
+message GetAssignmentRequest {
+  string assignment_id = 1;
+}
+
+message AssignmentReply {
+  string id = 1;
+  string subject_id = 2;
+  string title = 3;
+  optional string description = 4;
+}
+
+message GetCriteriaForAssignmentRequest {
+  string assignment_id = 1;
+}
+
+message RubricCriterionReply {
+  string id = 1;
+  string code = 2;
+  string name = 3;
+  optional string description = 4;
+  // Decimal-as-string (not double) to avoid floating-point drift on grading scores.
+  string max_score = 5;
+  int32 order_index = 6;
+}
+
+message GetCriteriaForAssignmentReply {
+  repeated RubricCriterionReply criteria = 1;
+}
+
+message GetLecturerStudentIdsRequest {
+  string subject_id = 1;
+  // Required (and only honored) when the caller is a service-role token; ignored for a lecturer caller,
+  // whose own identity is taken from the JWT instead. Mirrors LecturerEnrollmentEndpoints' REST behavior.
+  optional string lecturer_id = 2;
+}
+
+message GetLecturerStudentIdsReply {
+  repeated string student_ids = 1;
+}

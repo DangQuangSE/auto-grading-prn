@@ -2,7 +2,7 @@
 
 > **Tài liệu Tham khảo Design System**: [GeeksforGeeks - How to Draw Architecture Diagrams](https://www.geeksforgeeks.org/system-design/how-to-draw-architecture-diagrams/)  
 > **Hệ thống**: AutoGrading SWD (Hệ thống Chấm bài Tự động Bằng AI cho Sinh viên & Giảng viên)  
-> **Phiên bản Code-Matched**: 2.0 (Cập nhật chuẩn hóa theo 100% mã nguồn thực tế)  
+> **Phiên bản Code-Matched**: 2.1 (Cập nhật 2026-07-25: thêm gRPC Grading↔Catalog integration)  
 > **Ngôn ngữ sơ đồ**: Mermaid Code (`.md` standard)
 
 ---
@@ -84,7 +84,7 @@ graph TD
     CS -->|Upload/Download Rubric Files| MINIO
 
     GS -->|HTTP Client: GetSubmissionAsync| SS
-    GS -->|HTTP Client: GetCriteriaForAssignmentAsync| CS
+    GS -->|gRPC Client: GetAssignment / GetCriteriaForAssignment / GetLecturerStudentIds| CS
     SS -->|HTTP Client: ValidateAssignment| CS
 
     SS -->|Publish: SubmissionUploaded| RMQ
@@ -247,7 +247,7 @@ graph TD
         HDR["ArtifactsExtractedHandler"]
         JOB["AiGradingJob (Hangfire)"]
         CLI_SUB["ISubmissionApiClient (HTTP GET /api/submissions/{id})"]
-        CLI_CAT["ICatalogApiClient (HTTP GET /api/assignments/{id}/criteria)"]
+        CLI_CAT["ICatalogApiClient (gRPC: GetAssignment, GetCriteriaForAssignment, GetLecturerStudentIds)"]
         OPENCODE_CLI["OpenCodeClient Engine"]
         DB_GRD[("MS SQL Server\nAutoGrading.Grading\n(AiGradingRun & AiCriterionScores)")]
         BUS_OUT["IEventBus (RabbitMQ)"]

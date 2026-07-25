@@ -45,7 +45,8 @@ docker compose up --build
 This starts SQL Server, RabbitMQ, MinIO, all 5 services, the gateway (`:5500`), and both
 frontends (`user-web` on `:5173`, `admin-web` on `:5174`). Each service is also reachable
 directly on its own port (Identity `:5001`, Catalog `:5002`, Submission `:5003`, Grading
-`:5004`, Notification `:5005`) for debugging.
+`:5004`, Notification `:5005`) for debugging. Catalog also exposes a gRPC endpoint on `:5012`
+(internal service-to-service only, not exposed via Gateway).
 
 To build the solution standalone (requires a local SQL Server/RabbitMQ, e.g. via
 `docker compose up sqlserver rabbitmq minio`):
