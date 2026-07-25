@@ -73,7 +73,8 @@ describe("useRubrics", () => {
     });
 
     const query = queryClient.getQueryCache().find({ queryKey: ["rubrics", null, null] })!;
-    const refetchInterval = query.options.refetchInterval as (query: typeof query) => number | false;
+    const options = query.options as { refetchInterval?: (q: typeof query) => number | false };
+    const refetchInterval = options.refetchInterval!;
 
     expect(refetchInterval(query)).toBe(2000);
 
