@@ -1,7 +1,7 @@
 using AutoGrading.Common.Auth;
 using AutoGrading.Common.Caching;
 using AutoGrading.Common.Messaging;
-using AutoGrading.Common.OpenCode;
+using AutoGrading.Common.Ai;
 using AutoGrading.Common.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,11 +38,11 @@ public static class ServiceCollectionExtensions
         return services;
     }
 
-    /// <summary>Registers the shared OpenCode AI client, bound to the "OpenCode" config section.</summary>
-    public static IServiceCollection AddOpenCodeClient(this IServiceCollection services, IConfiguration configuration)
+    /// <summary>Registers the shared AI client, bound to the "Ai" config section.</summary>
+    public static IServiceCollection AddAiClient(this IServiceCollection services, IConfiguration configuration)
     {
-        services.Configure<OpenCodeOptions>(configuration.GetSection(OpenCodeOptions.SectionName));
-        services.AddHttpClient<IOpenCodeClient, OpenCodeClient>();
+        services.Configure<AiOptions>(configuration.GetSection(AiOptions.SectionName));
+        services.AddHttpClient<IAiClient, AiClient>();
 
         return services;
     }

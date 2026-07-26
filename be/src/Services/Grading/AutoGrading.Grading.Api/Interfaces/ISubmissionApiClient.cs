@@ -3,7 +3,6 @@ namespace AutoGrading.Grading.Api.Interfaces;
 public enum ArtifactKindDto
 {
     Report,
-    Diagram,
 }
 
 public sealed record ExtractedArtifactDto(Guid Id, ArtifactKindDto Kind, string? Content, string? Warnings, string? ImagesJson);

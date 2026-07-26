@@ -3,7 +3,7 @@ using AutoGrading.Common.Messaging;
 using AutoGrading.Contracts.Events;
 using AutoGrading.Grading.Api.Domain;
 using AutoGrading.Grading.Api.Interfaces;
-using AutoGrading.Common.OpenCode;
+using AutoGrading.Common.Ai;
 
 namespace AutoGrading.Grading.Api.Jobs;
 
@@ -16,8 +16,8 @@ public sealed class AiGradingJob(
     IGradingRepository repository,
     ICatalogApiClient catalogApiClient,
     ISubmissionApiClient submissionApiClient,
-    IOpenCodeClient openCodeClient,
-    OpenCodeOptions openCodeOptions,
+    IAiClient aiClient,
+    AiOptions aiOptions,
     IEventBus eventBus)
 {
     public async Task ExecuteAsync(Guid submissionId, string? assignmentDescriptionOverride = null, CancellationToken cancellationToken = default)
@@ -25,7 +25,7 @@ public sealed class AiGradingJob(
         var run = new AiGradingRun
         {
             SubmissionId = submissionId,
-            Model = openCodeOptions.Model,
+            Model = aiOptions.Model,
             Status = AiGradingRunStatus.Running,
         };
 
@@ -52,15 +52,13 @@ public sealed class AiGradingJob(
             var assignmentDescription = assignmentDescriptionOverride ?? assignment?.Description;
 
             var reportArtifact = submission.Artifacts.FirstOrDefault(a => a.Kind == ArtifactKindDto.Report);
-            var diagramArtifact = submission.Artifacts.FirstOrDefault(a => a.Kind == ArtifactKindDto.Diagram);
 
             var reportContent = reportArtifact?.Content ?? string.Empty;
-            var diagramContent = diagramArtifact?.Content ?? string.Empty;
-            var images = ParseImages(reportArtifact?.ImagesJson).Concat(ParseImages(diagramArtifact?.ImagesJson)).ToArray();
+            var images = ParseImages(reportArtifact?.ImagesJson).ToArray();
 
-            var results = await openCodeClient.GradeAsync(
+            var results = await aiClient.GradeAsync(
                 reportContent: reportContent,
-                diagramContent: diagramContent,
+                diagramContent: string.Empty,
                 criteria: criteria,
                 assignmentDescription: assignmentDescription,
                 images: images,
