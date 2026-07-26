@@ -115,9 +115,9 @@ services:
       Minio__SecretKey: ${MINIO_ROOT_PASSWORD}
       Minio__UseSsl: "false"
       Minio__BucketName: autograding
-      OpenCode__ApiKey: ${OPENCODE_API_KEY}
-      OpenCode__Model: mimo-v2.5-free
-      OpenCode__BaseUrl: https://opencode.ai/zen/v1
+      AI__ApiKey: ${AI_API_KEY}
+      AI__Model: PRN
+      AI__BaseUrl: https://9routerhelios.duckdns.org/v1
       Redis__ConnectionString: redis:6379
     ports:
       - "5002:8080"
@@ -188,9 +188,9 @@ services:
       RabbitMq__Password: ${RABBITMQ_PASSWORD}
       RabbitMq__Exchange: autograding.events
       RabbitMq__ServiceName: grading
-      OpenCode__ApiKey: ${OPENCODE_API_KEY}
-      OpenCode__Model: mimo-v2.5-free
-      OpenCode__BaseUrl: https://opencode.ai/zen/v1
+      AI__ApiKey: ${AI_API_KEY}
+      AI__Model: PRN
+      AI__BaseUrl: https://9routerhelios.duckdns.org/v1
       Services__CatalogGrpcAddress: http://catalog-api:8081
       Services__SubmissionApiBaseUrl: http://submission-api:8080
     ports:
