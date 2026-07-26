@@ -20,7 +20,7 @@ Supabase app is tracked in `plans/split-fe-be-microservices/` (`spec.md`, `plan.
 ## Running the full stack
 
 ```bash
-cp .env.example .env   # fill in SA_PASSWORD, RABBITMQ_*, JWT_SIGNING_KEY, MINIO_*, OPENROUTER_API_KEY
+cp .env.example .env   # fill in SA_PASSWORD, RABBITMQ_*, JWT_SIGNING_KEY, MINIO_*, AI_API_KEY
 docker compose up --build
 ```
 

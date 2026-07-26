@@ -43,7 +43,6 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase)));
 
 builder.Services.AddScoped<DocxReportParser>();
-builder.Services.AddScoped<DrawioDiagramParser>();
 builder.Services.AddScoped<IArtifactParser, ArtifactParser>();
 builder.Services.AddSubmissionRepository().AddSubmissionApplication();
 builder.Services.AddScoped<ExtractionJob>();

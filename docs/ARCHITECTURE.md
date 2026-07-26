@@ -172,6 +172,40 @@ Gateway là điểm vào duy nhất cho frontend (`localhost:5500`). YARP địn
 
 **Cơ chế:** Service A publish event → RabbitMQ gửi đến queue của từng consumer → mỗi service consume độc lập (pub/sub fan-out). Queue được tạo và bind tại thời điểm `Subscribe<>()`.
 
+### 3.2.1 Exchange & Queue Binding Details
+
+**File:** `be/src/BuildingBlocks/AutoGrading.Common/Messaging/RabbitMqEventBus.cs`
+
+| Thuộc tính | Giá trị |
+|-----------|--------|
+| Exchange name | `autograding.events` |
+| Exchange type | Topic |
+| Exchange durability | Durable |
+| Message persistence | `properties.Persistent = true` |
+| Ack model | Manual (`BasicAck` sau khi handler hoàn tất) |
+| Consumer mode | `AsyncEventingBasicConsumer`, autoAck = false |
+| Connection retry | 5 lần, mỗi lần chờ 3 giây |
+| Handler dispatch | Reflection: `GetMethod("HandleAsync").Invoke(handler, ...)` |
+| Concurrency | Single consumer per queue (không parallel) |
+
+**Queue binding table** (tự động tạo khi `Subscribe<>()` được gọi tại startup):
+
+| Queue Name | Routing Key | Service | Registered in |
+|-----------|------------|---------|---------------|
+| `identity.ClassLecturerAssigned` | `ClassLecturerAssigned` | Identity | `Program.cs` line 61 |
+| `identity.SubmissionUploaded` | `SubmissionUploaded` | Identity | `Program.cs` line 62 |
+| `identity.GradePublished` | `GradePublished` | Identity | `Program.cs` line 63 |
+| `submission.SubmissionUploaded` | `SubmissionUploaded` | Submission | `Program.cs` line 71 |
+| `grading.ArtifactsExtracted` | `ArtifactsExtracted` | Grading | `Program.cs` line 83 |
+| `grading.RubricConfirmed` | `RubricConfirmed` | Grading | `Program.cs` line 84 |
+| `notification.UserRegistered` | `UserRegistered` | Notification | `Program.cs` line 101 |
+| `notification.AiGradingCompleted` | `AiGradingCompleted` | Notification | `Program.cs` line 102 |
+| `notification.GradePublished` | `GradePublished` | Notification | `Program.cs` line 103 |
+| `notification.RubricParsed` | `RubricParsed` | Notification | `Program.cs` line 104 |
+| `notification.SubmissionStatusChanged` | `SubmissionStatusChanged` | Notification | `Program.cs` line 105 |
+
+**Lưu ý:** `SubmissionUploaded` có 2 consumers (Identity + Submission) → mỗi service nhận bản copy riêng qua queue của mình (pub/sub fan-out thực sự). Catalog chỉ publish, không subscribe queue nào.
+
 ### 3.3 Service-to-Service Communication (HTTP + gRPC)
 
 **Service JWT:** Khác với User JWT, Service JWT có:
@@ -465,6 +499,304 @@ Lecturer review (admin-web)
     ▼
 Student xem kết quả (user-web)
 ```
+
+---
+
+## 12. Transactional Outbox Pattern (GradePublishedOutbox)
+
+### 12.1 Motivation
+
+RabbitMQ publish không tham gia vào SQL transaction. Nếu service crash sau khi `db.SaveChanges()` nhưng trước khi `bus.PublishAsync()`, điểm đã được lưu vào DB nhưng không có event nào gửi đi → Notification và Identity không bao giờ nhận được `GradePublished`.
+
+**Giải pháp:** Ghi outbox row vào cùng transaction với FinalGrade. Một `BackgroundService` độc lập liên tục poll outbox và publish.
+
+### 12.2 Entity
+
+**File:** `be/src/Services/Grading/AutoGrading.Grading.Api/Domain/GradePublishedOutbox.cs`
+
+| Field | Type | Ý nghĩa |
+|-------|------|---------|
+| `Id` | `Guid` | EventId (dùng làm idempotency key khi publish) |
+| `SubmissionId` | `Guid` | — |
+| `FinalGradeId` | `Guid` | — |
+| `FinalScore` | `decimal` | — |
+| `PublishedByUserId` | `Guid` | — |
+| `CreatedAt` | `DateTimeOffset` | Thứ tự publish |
+| `DispatchedAt` | `DateTimeOffset?` | `null` = chưa publish, `not null` = đã publish |
+
+### 12.3 Write Path (Atomic)
+
+**File:** `be/src/Services/Grading/AutoGrading.Grading.Api/Endpoints/GradesEndpoints.cs` → `PublishOneAsync()`
+
+```csharp
+await using var transaction = await db.Database.BeginTransactionAsync(ct);
+db.FinalGrades.Add(new FinalGrade { ... });
+db.GradePublications.Add(new GradePublication { ... });
+db.GradePublishedOutbox.Add(new GradePublishedOutbox { ... });
+await db.SaveChangesAsync(ct);
+await transaction.CommitAsync(ct);
+```
+
+Ba bảng được ghi trong cùng một SQL transaction → all-or-nothing.
+
+### 12.4 Dispatcher (BackgroundService)
+
+**File:** `be/src/Services/Grading/AutoGrading.Grading.Api/Jobs/GradePublishedOutboxDispatcher.cs`
+
+```csharp
+// Chạy vĩnh viễn, không dùng Hangfire
+protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+{
+    while (!stoppingToken.IsCancellationRequested)
+    {
+        var messages = await db.GradePublishedOutbox
+            .Where(x => x.DispatchedAt == null)
+            .OrderBy(x => x.CreatedAt).Take(100).ToListAsync();
+
+        foreach (var message in messages)
+        {
+            await bus.PublishAsync(new GradePublished(...) { EventId = message.Id });
+            message.DispatchedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync();
+        }
+        await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+    }
+}
+```
+
+| Thuộc tính | Giá trị |
+|-----------|--------|
+| Loại | `BackgroundService` (không phải Hangfire) |
+| Polling interval | 2 giây |
+| Batch size | 100 records/poll |
+| Ordering | `ORDER BY CreatedAt ASC` |
+| Error handling | Catch all → `LogError` → tiếp tục poll (không dừng) |
+| Registration | `builder.Services.AddHostedService<GradePublishedOutboxDispatcher>()` |
+
+### 12.5 Deduplication
+
+`GradePublishedConsumer` (Notification service) deduplicate bằng cách kiểm tra `IntegrationEventId` đã tồn tại trong `AuditEvents` chưa trước khi tạo notification.
+
+### 12.6 Giới hạn
+
+- **At-least-once** (không phải exactly-once): nếu publish thành công nhưng `SaveChanges` fail, message bị gửi lần 2 lần poll sau
+- Không có dead-letter queue cho messages không publish được vĩnh viễn
+- Không có alert khi outbox tích tụ (không có monitoring)
+
+---
+
+## 11. Real-time Notifications (SignalR)
+
+### 11.1 Hub
+
+**File:** `be/src/Services/Notification/AutoGrading.Notification.Api/Hubs/NotificationHub.cs`
+
+```csharp
+[Authorize]
+public sealed class NotificationHub : Hub
+{
+    // SignalR tự map authenticated user's NameIdentifier → UserId connection group
+}
+```
+
+| Thuộc tính | Giá trị |
+|-----------|--------|
+| Hub class | `NotificationHub` |
+| Route trong Notification service | `/hub` |
+| Route qua Gateway | `/notifications/hub` (YARP strip `/notifications` → `/hub`) |
+| Auth | `[Authorize]` — yêu cầu JWT hợp lệ |
+| JWT transport | Query param `?access_token=<token>` (không phải `Authorization` header) |
+
+**Lý do dùng query param:** WebSocket handshake không thể set custom header trong browser. `JwtExtensions.cs` cấu hình `OnMessageReceived` để đọc token từ `context.Request.Query["access_token"]` cho path `/hub` và `/notifications/hub`.
+
+### 11.2 Push Events (Consumer-Driven)
+
+Hub không có custom methods. Toàn bộ push từ server → client xuất phát từ RabbitMQ consumers inject `IHubContext<NotificationHub>`:
+
+| Consumer | Event nhận | SignalR call | Event name gửi client |
+|----------|-----------|--------------|----------------------|
+| `SubmissionStatusChangedConsumer` | `SubmissionStatusChanged` | `hubContext.Clients.User(studentId).SendAsync(...)` | `"SubmissionUpdated"` |
+
+**File:** `be/src/Services/Notification/AutoGrading.Notification.Api/Consumers/SubmissionStatusChangedConsumer.cs`
+
+```csharp
+await hubContext.Clients.User(@event.StudentId.ToString())
+    .SendAsync("SubmissionUpdated", @event, cancellationToken);
+```
+
+`Clients.User(id)` gửi tới tất cả connections của đúng user đó (SignalR dùng `NameIdentifier` claim để map).
+
+### 11.3 Frontend Connection (user-web)
+
+**File:** `fe/user-web/src/pages/StudentResultPage.tsx`
+
+```typescript
+const connection = new HubConnectionBuilder()
+  .withUrl(`${import.meta.env.VITE_API_BASE_URL}/notifications/hub?access_token=${session.token}`)
+  .withAutomaticReconnect()   // 0s, 2s, 10s, 30s (default policy)
+  .build();
+
+connection.on("SubmissionUpdated", (data) => {
+  queryClient.invalidateQueries({ queryKey: ["my-submissions"] });
+  if (data.submissionId === selectedId) {
+    setLiveStatus(data.status);
+  }
+});
+
+connection.start().catch(console.error);
+
+// Cleanup on unmount / dep change
+return () => { connection.stop(); };
+```
+
+| Thuộc tính | Giá trị |
+|-----------|--------|
+| Library | `@microsoft/signalr` v10.0.0 |
+| Base URL | `VITE_API_BASE_URL` (mặc định `http://localhost:5500`) |
+| Reconnect | `withAutomaticReconnect()` — thử lại sau 0s, 2s, 10s, 30s |
+| Dependencies | `[session?.token, selectedId, queryClient]` |
+| Lifecycle | Created + started trong `useEffect`, stopped khi unmount hoặc dep thay đổi |
+
+### 11.4 CORS cho WebSocket
+
+SignalR WebSocket yêu cầu CORS policy đặc biệt với `AllowCredentials()`:
+
+**Notification service** (`Program.cs`):
+```csharp
+builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
+    policy.WithOrigins("http://localhost:5173", "http://localhost:5174")
+          .AllowAnyHeader().AllowAnyMethod().AllowCredentials()));
+```
+
+**Gateway** (`Program.cs`): cùng cấu hình tương tự.
+
+⚠️ `AllowCredentials()` KHÔNG thể kết hợp với `AllowAnyOrigin()` — bắt buộc phải dùng `WithOrigins([...])` explicit.
+
+---
+
+## 14. Security Considerations
+
+### 14.1 JWT Storage và Transport
+
+| Điểm | Chi tiết |
+|------|---------|
+| Frontend storage | `localStorage` (không phải httpOnly cookie) |
+| user-web key | `"auto-grading.session"` |
+| admin-web key | `"auto-grading-admin.session"` |
+| HTTP calls | `Authorization: Bearer <token>` header |
+| SignalR | Query param `?access_token=<token>` (browser không thể set header cho WebSocket) |
+
+### 14.2 Service-to-Service Auth
+
+Internal HTTP calls dùng Service JWT riêng biệt với User JWT:
+
+| Claim | Service JWT |
+|-------|------------|
+| `sub` | `Guid.Empty` |
+| `email` | `{serviceName}@internal.autograding` |
+| `role` | `service` |
+| Expiry | 60 phút |
+
+Tạo bởi `JwtTokenGenerator.GenerateServiceToken(serviceName)`, gắn vào outgoing requests qua `ServiceAuthHandler` (DelegatingHandler) ở Grading và Submission service.
+
+### 14.3 Rate Limiting (Gateway)
+
+| Policy | Limit | Áp dụng cho |
+|--------|-------|------------|
+| Global | 100 req/min/IP | Tất cả routes |
+| `auth-strict` | 10 req/min/IP | Route `/identity/*` |
+
+**File:** `be/src/Gateway/AutoGrading.Gateway/Program.cs`
+
+### 14.4 CORS
+
+Chỉ 2 origin được phép ở Gateway và Notification service:
+- `http://localhost:5173` (user-web)
+- `http://localhost:5174` (admin-web)
+
+`AllowCredentials()` bắt buộc cho SignalR WebSocket — không thể dùng `AllowAnyOrigin()` kết hợp với `AllowCredentials()`.
+
+### 14.5 Google OAuth
+
+| Thuộc tính | Chi tiết |
+|-----------|---------|
+| Verification | `GoogleJsonWebSignature.ValidateAsync(idToken, { Audience: clientId })` |
+| Email restriction | Chỉ email đã verify + domain `.edu` hoặc chứa `.edu.` (e.g. `fpt.edu.vn`) |
+| Validator | `EducationEmailValidator.IsEducationEmail()` |
+| File | `be/src/Services/Identity/AutoGrading.Identity.Api/Auth/GoogleAuthOptions.cs` |
+
+### 14.6 Known Security Gaps
+
+| Gap | Mức độ | Chi tiết |
+|-----|--------|---------|
+| Hangfire dashboard không có auth | HIGH | 3 services expose `/hangfire` với `AllowAllDashboardAuthorizationFilter` (luôn return `true`) |
+| Không có `.dockerignore` | MEDIUM | `COPY . .` trong Dockerfile copy toàn bộ repo context vào image, bao gồm `.env`, secrets |
+| JWT signing key mặc định | MEDIUM | `appsettings.json` chứa key `"CHANGE_ME_dev_..."` — production phải override qua env var `JWT_SIGNING_KEY` |
+| Không có HTTPS enforcement | MEDIUM | Internal Docker traffic là HTTP; không có `UseHttpsRedirection` hay HSTS |
+| Không có CSP headers | LOW | Không có Content Security Policy headers trong responses |
+| localStorage JWT | LOW | Dễ bị XSS đọc token; httpOnly cookie sẽ an toàn hơn |
+
+---
+
+## 13. Error Handling Patterns
+
+### 13.1 Backend — Không có Global Exception Middleware
+
+Không có `UseExceptionHandler`, `IExceptionHandler`, hay global middleware. Mỗi endpoint xử lý lỗi inline bằng `Results` factory:
+
+| HTTP Status | `Results` method | Khi nào dùng |
+|-------------|-----------------|-------------|
+| 400 | `Results.BadRequest(new { message, code })` | Validation fail, input sai |
+| 401 | `Results.Unauthorized()` | Không có JWT |
+| 403 | `Results.Forbid()` | Có JWT nhưng không có quyền |
+| 404 | `Results.NotFound()` hoặc `Results.NotFound(new { ... })` | Resource không tồn tại |
+| 409 | `Results.Conflict(new { message })` | Duplicate, max attempts reached, v.v. |
+| 500 | `Results.Problem(statusCode: 500)` | Unexpected error |
+
+Tổng số: 69 lần dùng `Results.NotFound/BadRequest/Conflict/Problem/Forbid` trong 11 endpoint files.
+
+### 13.2 Error Response Shape
+
+Không có shared `ApiResponse<T>` wrapper. Response là anonymous objects:
+
+```json
+// 400 Bad Request
+{ "message": "File must be a .docx document", "code": "INVALID_FILE" }
+
+// 404 Not Found (với extra context)
+{ "gradingDone": true }
+
+// 409 Conflict
+{ "message": "Maximum submission attempts (3) reached" }
+```
+
+### 13.3 Frontend — ApiError Class
+
+**File:** `fe/user-web/src/lib/apiClient.ts` (tương tự `fe/admin-web/src/lib/apiClient.ts`)
+
+```typescript
+export class ApiError extends Error {
+  status: number;
+  body: unknown;  // Parsed JSON body của error response
+}
+```
+
+`readErrorBody()` parse response:
+1. Thử `response.json()` → đọc `body.message` hoặc `body.title`
+2. Fallback về `response.statusText` nếu parse fail
+
+Frontend services dùng `error.body` để đọc custom fields như `gradingDone` (VD: `gradingService.ts` kiểm tra `error.body.gradingDone` khi nhận 404).
+
+### 13.4 Hangfire Job Errors
+
+- Jobs không configure custom retry policy → dùng Hangfire default (10 lần retry, exponential backoff)
+- `ExtractionJob`: catch exception → set submission state `Failed`, publish `SubmissionStatusChanged("Failed")`
+- `AiGradingJob`: catch exception → set run status `Failed`, publish `SubmissionStatusChanged("AiGradingFailed")`
+- `RubricParsingJob`: catch exception → set rubric status `Failed`
+
+### 13.5 Outbox Dispatcher Errors
+
+`GradePublishedOutboxDispatcher` catch tất cả exceptions, log error, tiếp tục vòng poll tiếp theo (không dừng service). Messages lỗi sẽ được thử lại ở poll sau (2 giây).
 
 ---
 

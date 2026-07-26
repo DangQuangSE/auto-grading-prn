@@ -1,20 +1,20 @@
 using System.Net;
 using System.Text;
-using AutoGrading.Common.OpenCode;
+using AutoGrading.Common.Ai;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
-namespace AutoGrading.Common.Tests.OpenRouter;
+namespace AutoGrading.Common.Tests.Ai;
 
 public class ParseRubricCriteriaAsyncTests
 {
-    private static OpenCodeClient CreateClient(string chatCompletionContent)
+    private static AiClient CreateClient(string chatCompletionContent)
     {
         var handler = new StubHttpMessageHandler(BuildChatCompletionPayload(chatCompletionContent));
-        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://opencode.example/") };
-        var options = Options.Create(new OpenCodeOptions { ApiKey = "test-key" });
+        var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://ai.example/") };
+        var options = Options.Create(new AiOptions { ApiKey = "test-key" });
 
-        return new OpenCodeClient(httpClient, options, NullLogger<OpenCodeClient>.Instance);
+        return new AiClient(httpClient, options, NullLogger<AiClient>.Instance);
     }
 
     private static string BuildChatCompletionPayload(string messageContent)

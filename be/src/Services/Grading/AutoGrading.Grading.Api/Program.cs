@@ -2,7 +2,7 @@ using AutoGrading.Common.Auth;
 using AutoGrading.Common.Extensions;
 using AutoGrading.Common.Jobs;
 using AutoGrading.Common.Messaging;
-using AutoGrading.Common.OpenCode;
+using AutoGrading.Common.Ai;
 using AutoGrading.Contracts.Events;
 using AutoGrading.Grading.Api.Clients;
 using AutoGrading.Grading.Api.Repository;
@@ -11,10 +11,9 @@ using AutoGrading.Grading.Api.Extensions;
 using AutoGrading.Grading.Api.Handlers;
 using AutoGrading.Grading.Api.Interfaces;
 using AutoGrading.Grading.Api.Jobs;
-using AutoGrading.Grading.Api.OpenCode;
 using Hangfire;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
+
 using CatalogGrpcClient = AutoGrading.Catalog.Api.Grpc.Catalog.CatalogClient;
 
 AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
@@ -34,9 +33,8 @@ builder.Services.AddEventBus(builder.Configuration);
 builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase)));
 
-builder.Services.Configure<OpenCodeOptions>(builder.Configuration.GetSection(OpenCodeOptions.SectionName));
-builder.Services.AddHttpClient<IOpenCodeClient, AutoGrading.Grading.Api.OpenCode.OpenCodeClient>();
-builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<OpenCodeOptions>>().Value);
+builder.Services.AddAiClient(builder.Configuration);
+builder.Services.AddSingleton(sp => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AiOptions>>().Value);
 
 builder.Services.Configure<ServicesOptions>(builder.Configuration.GetSection(ServicesOptions.SectionName));
 var servicesOptions = builder.Configuration.GetSection(ServicesOptions.SectionName).Get<ServicesOptions>() ?? new ServicesOptions();

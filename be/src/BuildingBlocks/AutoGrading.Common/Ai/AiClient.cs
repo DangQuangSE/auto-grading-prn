@@ -1,18 +1,41 @@
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
-using AutoGrading.Common.OpenCode;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
-namespace AutoGrading.Grading.Api.OpenCode;
+namespace AutoGrading.Common.Ai;
 
-/// <summary>
-/// Calls OpenCode for AI grading when an API key is configured; otherwise falls back to a
-/// deterministic stub so the grading pipeline is exercisable without external credentials.
-/// </summary>
-public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> options, ILogger<OpenCodeClient> logger) : IOpenCodeClient
+public record GradingCriterionInput(Guid RubricCriterionId, string Name, decimal MaxScore);
+
+public record GradingCriterionResult(
+    Guid RubricCriterionId,
+    decimal MaxScore,
+    decimal SuggestedScore,
+    string? Deductions,
+    string? Evidence,
+    string? Comment,
+    decimal? Confidence);
+
+public record ExtractedRubricCriterion(string Name, string? Description, decimal MaxScore, int Order);
+
+public interface IAiClient
 {
-    private readonly OpenCodeOptions _options = options.Value;
+    Task<IReadOnlyList<GradingCriterionResult>> GradeAsync(
+        string reportContent,
+        string diagramContent,
+        IReadOnlyList<GradingCriterionInput> criteria,
+        string? assignmentDescription,
+        IReadOnlyList<string>? images,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<ExtractedRubricCriterion>> ParseRubricCriteriaAsync(
+        string documentText,
+        CancellationToken cancellationToken);
+}
+
+public partial class AiClient(HttpClient httpClient, IOptions<AiOptions> options, ILogger<AiClient> logger) : IAiClient
+{
+    private readonly AiOptions _options = options.Value;
 
     public async Task<IReadOnlyList<GradingCriterionResult>> GradeAsync(
         string reportContent,
@@ -24,12 +47,11 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
     {
         if (string.IsNullOrWhiteSpace(_options.ApiKey))
         {
-            logger.LogWarning("OpenCode API key is not configured; using stub grading.");
-            return StubGrade(criteria, "Stub grading (no OpenCode API key configured).");
+            logger.LogWarning("AI API key is not configured; using stub grading.");
+            return StubGrade(criteria, "Stub grading (no AI API key configured).");
         }
 
         var prompt = BuildPrompt(reportContent, diagramContent, criteria, assignmentDescription);
-        // Vision is opt-in because not every model behind OpenCode Zen is multimodal.
         var userContent = _options.EnableVision
             ? BuildUserContentWithImages(prompt, images)
             : prompt;
@@ -69,7 +91,7 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
                 }
 
                 logger.LogWarning(
-                    "OpenCode request attempt {Attempt}/{MaxRetries} failed with {StatusCode}: {Body}",
+                    "AI request attempt {Attempt}/{MaxRetries} failed with {StatusCode}: {Body}",
                     attempt,
                     maxRetries,
                     response.StatusCode,
@@ -82,7 +104,7 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
             }
             catch (Exception ex) when (attempt < maxRetries && ex is not OperationCanceledException)
             {
-                logger.LogWarning(ex, "OpenCode request attempt {Attempt}/{MaxRetries} threw exception", attempt, maxRetries);
+                logger.LogWarning(ex, "AI request attempt {Attempt}/{MaxRetries} threw exception", attempt, maxRetries);
                 await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)), cancellationToken);
             }
         }
@@ -90,8 +112,8 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
         if (response is null || !response.IsSuccessStatusCode)
         {
             var statusCode = response is null ? "Exception" : ((int)response.StatusCode).ToString();
-            logger.LogError("OpenCode request failed after {MaxRetries} attempts with {StatusCode}: {Body}", maxRetries, statusCode, payload);
-            return StubGrade(criteria, $"Stub grading (OpenCode request failed after {maxRetries} attempts: {statusCode}).");
+            logger.LogError("AI request failed after {MaxRetries} attempts with {StatusCode}: {Body}", maxRetries, statusCode, payload);
+            return StubGrade(criteria, $"Stub grading (AI request failed after {maxRetries} attempts: {statusCode}).");
         }
 
         var parsed = TryParseResponse(payload, criteria, out var failureReason);
@@ -100,15 +122,81 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
             return parsed;
         }
 
-        logger.LogError("Failed to parse OpenCode response: {Reason}. Raw payload: {Payload}", failureReason, payload);
+        logger.LogError("Failed to parse AI response: {Reason}. Raw payload: {Payload}", failureReason, payload);
         return StubGrade(criteria, $"Stub grading (could not parse AI response: {failureReason}).");
     }
 
-    public Task<IReadOnlyList<ExtractedRubricCriterion>> ParseRubricCriteriaAsync(
+    public async Task<IReadOnlyList<ExtractedRubricCriterion>> ParseRubricCriteriaAsync(
         string documentText,
         CancellationToken cancellationToken)
-        => Task.FromResult<IReadOnlyList<ExtractedRubricCriterion>>(
-            [new ExtractedRubricCriterion("Overall Quality", null, 10m, 0)]);
+    {
+        if (string.IsNullOrWhiteSpace(_options.ApiKey))
+        {
+            return StubRubricCriteria("Stub criterion (no AI API key configured).");
+        }
+
+        var prompt = BuildRubricExtractionPrompt(documentText);
+        var payload = await SendChatCompletionAsync(prompt, cancellationToken);
+        var parsed = TryParseRubricCriteriaResponse(payload);
+
+        if (parsed is not null)
+        {
+            return parsed;
+        }
+
+        logger.LogWarning(
+            "AiClient: rubric-criteria extraction response could not be parsed into valid criteria; falling back to stub. Response length: {PayloadLength}",
+            payload.Length);
+
+        return StubRubricCriteria("AI extraction could not parse a valid response for this document; add criteria manually.");
+    }
+
+    private async Task<string> SendChatCompletionAsync(string prompt, CancellationToken cancellationToken)
+    {
+        var requestBody = new
+        {
+            model = _options.Model,
+            messages = new[]
+            {
+                new { role = "system", content = "You are an assistant that returns strict JSON and nothing else." },
+                new { role = "user", content = prompt },
+            },
+        };
+
+        const int maxRetries = 3;
+        for (var attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Post, $"{_options.BaseUrl.TrimEnd('/')}/chat/completions")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(requestBody), Encoding.UTF8, "application/json"),
+                };
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _options.ApiKey);
+
+                using var response = await httpClient.SendAsync(request, cancellationToken);
+                if (response.IsSuccessStatusCode)
+                {
+                    return await response.Content.ReadAsStringAsync(cancellationToken);
+                }
+
+                if (attempt == maxRetries)
+                {
+                    response.EnsureSuccessStatusCode();
+                }
+
+                logger.LogWarning("SendChatCompletionAsync attempt {Attempt}/{MaxRetries} failed with {StatusCode}", attempt, maxRetries, response.StatusCode);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)), cancellationToken);
+            }
+            catch (Exception ex) when (attempt < maxRetries && ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "SendChatCompletionAsync attempt {Attempt}/{MaxRetries} threw exception", attempt, maxRetries);
+                await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt - 1)), cancellationToken);
+            }
+        }
+
+        throw new HttpRequestException("AI request failed after 3 retries.");
+    }
 
     private static object BuildUserContentWithImages(string prompt, IReadOnlyList<string>? images)
     {
@@ -152,12 +240,23 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
                 """;
     }
 
-    private static readonly Regex CodeFenceRegex = new(@"^```(?:json)?\s*|\s*```$", RegexOptions.Compiled | RegexOptions.Multiline);
+    private static string BuildRubricExtractionPrompt(string documentText)
+    {
+        return $"""
+                Extract the grading criteria from the rubric document below.
+                Respond with a JSON array, one object per criterion, each with fields:
+                name (string), description (string, may be empty), maxScore (number), order (integer, 0-based).
+
+                Rubric document:
+                {documentText}
+                """;
+    }
 
     private static IReadOnlyList<GradingCriterionResult>? TryParseResponse(string payload, IReadOnlyList<GradingCriterionInput> criteria, out string failureReason)
     {
         try
         {
+            payload = StripStreamingSuffix(payload);
             using var doc = JsonDocument.Parse(payload);
             var contentElement = doc.RootElement
                 .GetProperty("choices")[0]
@@ -204,7 +303,6 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
                 return null;
             }
 
-            // Fill in missing criteria if the LLM omitted any of them so total max score matches rubric.
             var coveredIds = results.Select(r => r.RubricCriterionId).ToHashSet();
             foreach (var criterion in criteria)
             {
@@ -258,7 +356,6 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
             return true;
         }
 
-        // Fallback: some models substitute a 1-based ordinal instead of the GUID.
         if (idElement.ValueKind == JsonValueKind.Number && idElement.TryGetInt32(out var index) && index >= 1 && index <= criteria.Count)
         {
             criterion = criteria[index - 1];
@@ -300,13 +397,111 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
         };
     }
 
+    private static string StripStreamingSuffix(string payload)
+    {
+        var dataIndex = payload.LastIndexOf("data: ", StringComparison.Ordinal);
+        return dataIndex >= 0 ? payload[..dataIndex].TrimEnd() : payload;
+    }
+
     private static string ExtractJsonArray(string content)
     {
-        var trimmed = CodeFenceRegex.Replace(content, string.Empty).Trim();
+        var trimmed = CodeFenceRegex().Replace(StripStreamingSuffix(content), string.Empty).Trim();
 
         var start = trimmed.IndexOf('[');
         var end = trimmed.LastIndexOf(']');
         return start >= 0 && end > start ? trimmed[start..(end + 1)] : trimmed;
+    }
+
+    [System.Text.RegularExpressions.GeneratedRegex(@"^```(?:json)?\s*|\s*```$", System.Text.RegularExpressions.RegexOptions.Multiline)]
+    private static partial System.Text.RegularExpressions.Regex CodeFenceRegex();
+
+    internal static IReadOnlyList<ExtractedRubricCriterion>? TryParseRubricCriteriaResponse(string payload)
+    {
+        var order = 0;
+
+        return TryParseJsonArray<ExtractedRubricCriterion>(payload, item =>
+        {
+            if (!item.TryGetProperty("name", out var nameProp) || nameProp.GetString() is not { Length: > 0 } name)
+            {
+                return null;
+            }
+
+            if (!item.TryGetProperty("maxScore", out var maxScoreProp) || !maxScoreProp.TryGetDecimal(out var maxScore))
+            {
+                return null;
+            }
+
+            var description = item.TryGetProperty("description", out var descProp) ? descProp.GetString() : null;
+            var itemOrder = item.TryGetProperty("order", out var orderProp) && orderProp.TryGetInt32(out var parsedOrder)
+                ? parsedOrder
+                : order;
+
+            order++;
+            return new ExtractedRubricCriterion(name, description, maxScore, itemOrder);
+        });
+    }
+
+    private static IReadOnlyList<T>? TryParseJsonArray<T>(string payload, Func<JsonElement, T?> itemParser)
+        where T : class
+    {
+        try
+        {
+            var content = ExtractMessageContent(payload);
+            if (string.IsNullOrWhiteSpace(content))
+            {
+                return null;
+            }
+
+            using var contentDoc = JsonDocument.Parse(StripCodeFence(content));
+            var results = new List<T>();
+
+            foreach (var item in contentDoc.RootElement.EnumerateArray())
+            {
+                var parsed = itemParser(item);
+                if (parsed is not null)
+                {
+                    results.Add(parsed);
+                }
+            }
+
+            return results.Count > 0 ? results : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractMessageContent(string payload)
+    {
+        payload = StripStreamingSuffix(payload);
+        using var doc = JsonDocument.Parse(payload);
+        return doc.RootElement
+            .GetProperty("choices")[0]
+            .GetProperty("message")
+            .GetProperty("content")
+            .GetString();
+    }
+
+    private static string StripCodeFence(string content)
+    {
+        var trimmed = content.Trim();
+        if (!trimmed.StartsWith("```", StringComparison.Ordinal))
+        {
+            return trimmed;
+        }
+
+        var firstNewline = trimmed.IndexOf('\n');
+        if (firstNewline < 0)
+        {
+            return trimmed;
+        }
+
+        var withoutOpeningFence = trimmed[(firstNewline + 1)..];
+        var closingFenceIndex = withoutOpeningFence.LastIndexOf("```", StringComparison.Ordinal);
+        var end = closingFenceIndex >= 0 ? closingFenceIndex : withoutOpeningFence.Length;
+
+        return withoutOpeningFence[..end].Trim();
     }
 
     private static IReadOnlyList<GradingCriterionResult> StubGrade(IReadOnlyList<GradingCriterionInput> criteria, string reason) =>
@@ -320,4 +515,7 @@ public class OpenCodeClient(HttpClient httpClient, IOptions<OpenCodeOptions> opt
                 Comment: "Automatically generated stub score.",
                 Confidence: 0.5m))
             .ToList();
+
+    private static IReadOnlyList<ExtractedRubricCriterion> StubRubricCriteria(string reason) =>
+        [new ExtractedRubricCriterion("Overall Quality", reason, 10m, 0)];
 }
