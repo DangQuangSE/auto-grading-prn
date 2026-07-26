@@ -1,7 +1,7 @@
 using AutoGrading.Catalog.Api.Domain;
 using AutoGrading.Catalog.Api.Interfaces;
 using AutoGrading.Common.Messaging;
-using AutoGrading.Common.OpenCode;
+using AutoGrading.Common.Ai;
 using AutoGrading.Common.Storage;
 using AutoGrading.Contracts.Events;
 
@@ -14,7 +14,7 @@ namespace AutoGrading.Catalog.Api.Jobs;
 public sealed class RubricParsingJob(
     IRubricRepository repo,
     IObjectStorage storage,
-    IOpenCodeClient openCodeClient,
+    IAiClient aiClient,
     IEventBus eventBus,
     ILogger<RubricParsingJob> logger)
 {
@@ -50,7 +50,7 @@ public sealed class RubricParsingJob(
                 documentText = DocxTextExtractor.ExtractText(fileStream);
             }
 
-            var extractedCriteria = await openCodeClient.ParseRubricCriteriaAsync(documentText, cancellationToken);
+            var extractedCriteria = await aiClient.ParseRubricCriteriaAsync(documentText, cancellationToken);
 
             var criteria = extractedCriteria.Select(criterion => new RubricCriterion
             {

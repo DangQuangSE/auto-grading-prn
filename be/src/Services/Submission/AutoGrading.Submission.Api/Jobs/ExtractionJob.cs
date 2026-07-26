@@ -41,10 +41,6 @@ public sealed class ExtractionJob(
             {
                 (ArtifactKind.Report, submission.ReportObjectKey),
             };
-            if (!string.IsNullOrEmpty(submission.DiagramObjectKey))
-            {
-                artifacts.Add((ArtifactKind.Diagram, submission.DiagramObjectKey));
-            }
 
             foreach (var (kind, objectKey) in artifacts)
             {

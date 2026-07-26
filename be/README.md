@@ -18,7 +18,7 @@ be/
       Identity/AutoGrading.Identity.Api/         # register/login, JWT issuance
       Catalog/AutoGrading.Catalog.Api/           # subjects, assignments, rubrics
       Submission/AutoGrading.Submission.Api/     # submission upload, artifact extraction
-      Grading/AutoGrading.Grading.Api/           # AI grading (OpenRouter), final grade publish
+      Grading/AutoGrading.Grading.Api/           # AI grading (AI provider), final grade publish
       Notification/AutoGrading.Notification.Api/ # audit log + per-user notifications
     Gateway/
       AutoGrading.Gateway/      # YARP reverse proxy, JWT validation, CORS
@@ -38,7 +38,7 @@ event handlers rather than on a fixed schedule: `ExtractionJob` (on `SubmissionU
 Full stack (recommended) — from the repo root:
 
 ```bash
-cp .env.example .env   # fill in SA_PASSWORD, RABBITMQ_*, JWT_SIGNING_KEY, MINIO_*, OPENROUTER_API_KEY
+cp .env.example .env   # fill in SA_PASSWORD, RABBITMQ_*, JWT_SIGNING_KEY, MINIO_*, AI_API_KEY
 docker compose up --build
 ```
 

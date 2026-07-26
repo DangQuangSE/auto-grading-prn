@@ -106,17 +106,13 @@ public static class SubmissionsEndpoints
         if (!TryBuildRequesterContext(user, out var requester, out var forbid)) return forbid!;
 
         await using var reportStream = form.ReportFile.OpenReadStream();
-        await using var diagramStream = form.DiagramFile?.OpenReadStream();
 
         var command = new UploadSubmissionCommand(
             form.AssignmentId,
             form.StudentId,
             reportStream,
             form.ReportFile.FileName,
-            form.ReportFile.ContentType,
-            diagramStream,
-            form.DiagramFile?.FileName,
-            form.DiagramFile?.ContentType);
+            form.ReportFile.ContentType);
 
         try
         {
