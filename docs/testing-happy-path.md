@@ -68,7 +68,7 @@ chung là `Test@12345`:
   Forbidden`, kể cả khi sinh viên đã nộp bài thành công. Một lecturer có thể dạy nhiều class
   của cùng 1 subject — được gộp chung (union), không cần chọn đúng 1 mã lớp cụ thể. `admin`
   không bị giới hạn này (luôn thấy tất cả). Xem mục 2.11 để test riêng flow này.
-- AI grading gọi LLM thật (OpenRouter/OpenCode) — có thể mất 10–60s, đừng poll quá gấp.
+- AI grading gọi LLM thật (AI provider) — có thể mất 10–60s, đừng poll quá gấp.
 
 ---
 
@@ -453,6 +453,6 @@ Submit/Result/Profile, vốn dành cho student) — nên dùng `admin-web` cho l
 - [ ] Admin mở lại Review/Grades — thấy tất cả, không bị scope như lecturer (3.13)
 
 Nếu một bước fail, dừng lại debug trước khi demo — đừng để lộ lỗi async job giữa buổi trình
-bày (đặc biệt `AiGradingJob`, phụ thuộc OpenRouter/OpenCode API còn sống). Lưu ý: hiện chưa có
+bày (đặc biệt `AiGradingJob`, phụ thuộc AI API còn sống). Lưu ý: hiện chưa có
 màn hình "Audit Events" trong UI (chỉ gọi được qua `GET /notifications/audit-events` bằng
 API/Swagger, admin-only), nên không đưa vào checklist demo UI.

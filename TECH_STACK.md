@@ -59,9 +59,9 @@ Tài liệu này liệt kê toàn bộ công nghệ/công cụ đang dùng trong
 - **Dùng để làm gì:** đọc nội dung file `.docx` (rubric Word do giảng viên upload, báo cáo sinh viên nộp) để trích xuất text/bảng, phục vụ AI chấm điểm.
 - **Nếu không có:** phải tự parse định dạng `.docx` (thực chất là file ZIP chứa XML) bằng tay hoặc dùng thư viện khác (ví dụ NPOI) — tốn công viết lại toàn bộ logic extract ở Submission/Catalog service.
 
-### OpenRouter (`OpenRouterClient`, model mặc định `deepseek/deepseek-chat`)
-- **Dùng để làm gì:** gọi LLM để (a) tự động trích xuất tiêu chí chấm điểm từ file rubric Word, (b) chấm điểm AI gợi ý cho bài nộp dựa trên rubric. OpenRouter là lớp trung gian gọi được nhiều model khác nhau qua 1 API key.
-- **Nếu không có:** mất tính năng "AI gợi ý điểm" và "tự trích rubric từ Word" — giảng viên phải nhập tay toàn bộ tiêu chí và chấm điểm hoàn toàn thủ công. Có thể thay bằng gọi thẳng OpenAI/Anthropic API, nhưng phải đổi request/response shape trong `OpenRouterClient.cs`.
+### AI Provider (`AiClient`, model PRN (glm-5.2))
+- **Dùng để làm gì:** gọi LLM để (a) tự động trích xuất tiêu chí chấm điểm từ file rubric Word, (b) chấm điểm AI gợi ý cho bài nộp dựa trên rubric. Dùng OpenAI-compatible endpoint, model PRN map sang glm-5.2.
+- **Nếu không có:** mất tính năng "AI gợi ý điểm" và "tự trích rubric từ Word" — giảng viên phải nhập tay toàn bộ tiêu chí và chấm điểm hoàn toàn thủ công.
 
 ---
 
@@ -143,7 +143,7 @@ Tài liệu này liệt kê toàn bộ công nghệ/công cụ đang dùng trong
 | Object storage | MinIO | Lưu file Word/report/diagram thật |
 | Auth | JWT + Google OAuth | Đăng nhập email hoặc Google |
 | Document parsing | DocumentFormat.OpenXml | Đọc file `.docx` |
-| AI | OpenRouter (DeepSeek) | Trích rubric + gợi ý điểm |
+| AI | AI Provider (PRN/glm-5.2) | Trích rubric + gợi ý điểm |
 | API docs | Swashbuckle/Swagger | Trang test API tự sinh (dev only) |
 | FE framework | React 18 + Vite + TS | Dựng UI 2 app admin-web/user-web |
 | FE data | TanStack Query | Fetch/cache API |

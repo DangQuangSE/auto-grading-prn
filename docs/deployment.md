@@ -57,7 +57,7 @@ Tất cả secrets được inject qua file `.env` ở thư mục gốc.
 | `RABBITMQ_PASSWORD` | ✅ | `<strong password>` | RabbitMQ admin password |
 | `MINIO_ROOT_USER` | ✅ | `autograding` | MinIO root username |
 | `MINIO_ROOT_PASSWORD` | ✅ | `<strong password>` | MinIO root password (min 8 chars) |
-| `OPENCODE_API_KEY` | ✅ | `sk-...` | OpenCode Zen API key (cho AI grading) |
+| `AI_API_KEY` | ✅ | `sk-...` | AI provider API key (cho AI grading) |
 | `GOOGLE_CLIENT_ID` | ✅ | `xxx.apps.googleusercontent.com` | Google OAuth Client ID |
 
 > Xem `.env.example` để biết format đầy đủ.
