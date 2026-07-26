@@ -32,6 +32,12 @@ public sealed class AuthService(
             throw new ClassNotFoundException(id);
         }
 
+        if (!string.IsNullOrWhiteSpace(studentCode) &&
+            await repository.ExistsByStudentCodeAsync(studentCode.Trim().ToLowerInvariant(), null, ct))
+        {
+            throw new StudentCodeAlreadyAssignedException(studentCode.Trim());
+        }
+
         var user = new User
         {
             Email = normalizedEmail,

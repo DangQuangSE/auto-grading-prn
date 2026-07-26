@@ -1,3 +1,4 @@
+using AutoGrading.Identity.Api.Constant;
 using AutoGrading.Identity.Api.Domain;
 using AutoGrading.Identity.Api.Interfaces;
 using AutoGrading.Identity.Api.RosterImport;
@@ -42,6 +43,12 @@ public sealed class UserService(IUserRepository repository) : IUserService
             throw new ClassNotFoundException(id);
         }
 
+        if (!string.IsNullOrWhiteSpace(studentCode) &&
+            await repository.ExistsByStudentCodeAsync(studentCode.Trim().ToLowerInvariant(), target.Id, ct))
+        {
+            throw new StudentCodeAlreadyAssignedException(studentCode.Trim());
+        }
+
         await repository.UpdateRosterFieldsAsync(target, studentCode, classId, ct);
 
         return (await ResolveClassNamesAsync([target], ct)).Single();
@@ -60,6 +67,11 @@ public sealed class UserService(IUserRepository repository) : IUserService
         var details = new List<RosterImportRowOutcome>();
         var accepted = new List<(User User, string? StudentCode, Guid ClassId)>();
         var updatedCount = 0;
+        // Tracks normalized (trimmed, lower-cased) StudentCodes already accepted earlier in this same
+        // file, keyed to the accepting user — catches duplicates within the batch itself, since rows
+        // aren't persisted (and thus aren't visible to ExistsByStudentCodeAsync) until the single
+        // BulkUpdateRosterAsync call at the end.
+        var acceptedStudentCodes = new Dictionary<string, Guid>();
 
         foreach (var row in parseResult.Rows)
         {
@@ -85,6 +97,20 @@ public sealed class UserService(IUserRepository repository) : IUserService
             {
                 details.Add(new RosterImportRowOutcome(row.RowNumber, email, "skipped", "not authorized for this student"));
                 continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(row.StudentCode))
+            {
+                var normalizedStudentCode = row.StudentCode.Trim().ToLowerInvariant();
+                var duplicate = (acceptedStudentCodes.TryGetValue(normalizedStudentCode, out var owner) && owner != user.Id) ||
+                    await repository.ExistsByStudentCodeAsync(normalizedStudentCode, user.Id, ct);
+                if (duplicate)
+                {
+                    details.Add(new RosterImportRowOutcome(row.RowNumber, email, "skipped", IdentityConstants.StudentCodeAlreadyAssignedSkipReason));
+                    continue;
+                }
+
+                acceptedStudentCodes[normalizedStudentCode] = user.Id;
             }
 
             accepted.Add((user, row.StudentCode, classCache.ClassId));

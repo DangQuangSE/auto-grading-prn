@@ -7,6 +7,12 @@ public interface IUserRepository
 {
     Task<bool> ExistsByEmailAsync(string email, CancellationToken ct);
 
+    /// <summary>Case-insensitive, trimmed lookup. <paramref name="normalizedStudentCode"/> must already be
+    /// trimmed/lower-cased by the caller. Pass <paramref name="excludeUserId"/> to exclude the user being
+    /// updated (so re-saving a user's own unchanged code isn't flagged as a duplicate); pass
+    /// <see langword="null"/> when checking a brand-new user (e.g. registration).</summary>
+    Task<bool> ExistsByStudentCodeAsync(string normalizedStudentCode, Guid? excludeUserId, CancellationToken ct);
+
     Task<bool> ClassExistsAsync(Guid classId, CancellationToken ct);
 
     Task<Guid> CreateUserAsync(User user, CancellationToken ct);
@@ -75,4 +81,12 @@ public sealed class ClassNotFoundException(Guid classId) : Exception(IdentityCon
 public sealed class UserNotFoundException(Guid userId) : Exception(IdentityConstants.UserNotFound)
 {
     public Guid UserId { get; } = userId;
+}
+
+/// <summary>Thrown by <c>UserService.UpdateAsync</c>/<c>AuthService.RegisterAsync</c> after
+/// <see cref="IUserRepository.ExistsByStudentCodeAsync"/> returns <see langword="true"/> for a non-blank
+/// StudentCode — same placement rule as <see cref="UserAlreadyExistsException"/>.</summary>
+public sealed class StudentCodeAlreadyAssignedException(string studentCode) : Exception(IdentityConstants.StudentCodeAlreadyAssigned)
+{
+    public string StudentCode { get; } = studentCode;
 }

@@ -10,4 +10,6 @@ public static class IdentityConstants
     public const string EmailNotRegistered = "email not registered";
     public const string NotAuthorizedForStudent = "not authorized for this student";
     public const string ConcurrentModificationError = "User {0} was modified concurrently; reload and try again.";
+    public const string StudentCodeAlreadyAssigned = "MSSV already exists.";
+    public const string StudentCodeAlreadyAssignedSkipReason = "studentCode already assigned to another student";
 }

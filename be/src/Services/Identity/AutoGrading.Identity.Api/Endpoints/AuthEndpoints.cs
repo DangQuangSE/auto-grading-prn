@@ -31,6 +31,10 @@ public static class AuthEndpoints
         {
             return Results.BadRequest(new { message = ex.Message });
         }
+        catch (StudentCodeAlreadyAssignedException ex)
+        {
+            return Results.Conflict(new { message = ex.Message });
+        }
     }
 
     private static async Task<IResult> LoginAsync(LoginRequest request, IAuthService service, CancellationToken cancellationToken)
