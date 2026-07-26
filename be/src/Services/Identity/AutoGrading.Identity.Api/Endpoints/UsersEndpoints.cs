@@ -77,6 +77,10 @@ public static class UsersEndpoints
         {
             return Results.BadRequest(new { message = ex.Message });
         }
+        catch (StudentCodeAlreadyAssignedException ex)
+        {
+            return Results.Conflict(new { message = ex.Message });
+        }
         catch (DbUpdateConcurrencyException)
         {
             return Results.Conflict(new { message = string.Format(IdentityConstants.ConcurrentModificationError, userId) });

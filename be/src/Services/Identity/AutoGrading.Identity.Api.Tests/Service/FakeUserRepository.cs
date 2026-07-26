@@ -18,6 +18,12 @@ public sealed class FakeUserRepository : IUserRepository
     public Task<bool> ExistsByEmailAsync(string email, CancellationToken ct) =>
         Task.FromResult(Users.Any(u => u.Email == email));
 
+    public Task<bool> ExistsByStudentCodeAsync(string normalizedStudentCode, Guid? excludeUserId, CancellationToken ct) =>
+        Task.FromResult(Users.Any(u =>
+            u.StudentCode != null &&
+            u.StudentCode.Trim().ToLowerInvariant() == normalizedStudentCode &&
+            (excludeUserId == null || u.Id != excludeUserId)));
+
     public Task<bool> ClassExistsAsync(Guid classId, CancellationToken ct) =>
         Task.FromResult(ExistingClassIds.Contains(classId));
 

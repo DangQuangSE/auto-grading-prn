@@ -38,6 +38,7 @@ export function RosterPage() {
   const [editingUser, setEditingUser] = useState<RosterUser | null>(null);
   const [studentCodeInput, setStudentCodeInput] = useState("");
   const [classIdInput, setClassIdInput] = useState("");
+  const [duplicateMssvError, setDuplicateMssvError] = useState<string | null>(null);
 
   const users = useRosterUsers();
   const classes = useClasses();
@@ -78,12 +79,28 @@ export function RosterPage() {
     setEditingUser(null);
     setStudentCodeInput("");
     setClassIdInput("");
+    setDuplicateMssvError(null);
     updateUser.reset();
   }
 
   async function handleSave() {
     if (!editingUser) {
       return;
+    }
+
+    setDuplicateMssvError(null);
+
+    // Cheap client-side pre-check against the already-loaded roster list; the backend check on
+    // the update endpoint remains the source of truth and is what actually enforces uniqueness.
+    const normalizedCode = studentCodeInput.trim().toLowerCase();
+    if (normalizedCode) {
+      const isDuplicate = (users.data ?? []).some(
+        (user) => user.id !== editingUser.id && (user.studentCode ?? "").trim().toLowerCase() === normalizedCode,
+      );
+      if (isDuplicate) {
+        setDuplicateMssvError("MSSV already exists.");
+        return;
+      }
     }
 
     try {
@@ -191,7 +208,10 @@ export function RosterPage() {
             <Field label="MSSV">
               <TextInput
                 value={studentCodeInput}
-                onChange={(event) => setStudentCodeInput(event.target.value)}
+                onChange={(event) => {
+                  setStudentCodeInput(event.target.value);
+                  setDuplicateMssvError(null);
+                }}
                 placeholder="SE123456"
               />
             </Field>
@@ -205,7 +225,8 @@ export function RosterPage() {
                 ))}
               </SelectInput>
             </Field>
-            {updateUser.error ? <FormMessage tone="error">{describeError(updateUser.error)}</FormMessage> : null}
+            {duplicateMssvError ? <FormMessage tone="error">{duplicateMssvError}</FormMessage> : null}
+            {!duplicateMssvError && updateUser.error ? <FormMessage tone="error">{describeError(updateUser.error)}</FormMessage> : null}
             <div className="modal-panel-actions">
               <Button type="button" onClick={handleSave} disabled={updateUser.isPending}>
                 {updateUser.isPending ? "Saving..." : "Save"}

@@ -9,6 +9,12 @@ public sealed class UserRepository(IdentityDbContext db) : IUserRepository
     public async Task<bool> ExistsByEmailAsync(string email, CancellationToken ct) =>
         await db.Users.AnyAsync(u => u.Email == email, ct);
 
+    public async Task<bool> ExistsByStudentCodeAsync(string normalizedStudentCode, Guid? excludeUserId, CancellationToken ct) =>
+        await db.Users.AnyAsync(u =>
+            u.StudentCode != null &&
+            u.StudentCode.Trim().ToLower() == normalizedStudentCode &&
+            (excludeUserId == null || u.Id != excludeUserId), ct);
+
     public async Task<bool> ClassExistsAsync(Guid classId, CancellationToken ct) =>
         await db.ClassLecturerCaches.AnyAsync(c => c.ClassId == classId, ct);
 
