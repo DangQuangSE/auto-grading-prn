@@ -15,10 +15,7 @@ public sealed record UploadSubmissionCommand(
     Guid? StudentId,
     Stream ReportStream,
     string ReportFileName,
-    string ReportContentType,
-    Stream? DiagramStream,
-    string? DiagramFileName,
-    string? DiagramContentType);
+    string ReportContentType);
 
 public interface ISubmissionService
 {

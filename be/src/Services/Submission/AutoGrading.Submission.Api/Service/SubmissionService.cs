@@ -59,29 +59,21 @@ public sealed class SubmissionService(
         var submission = await repository.CreateWithAttemptCheckAsync(command.AssignmentId, studentId, assignment.MaxAttempts, ct);
 
         var reportKey = $"submissions/{Guid.NewGuid()}-{command.ReportFileName}";
-        string? diagramKey = null;
         try
         {
             await storage.UploadAsync(reportKey, command.ReportStream, command.ReportContentType, ct);
 
-            if (command.DiagramStream is not null)
-            {
-                diagramKey = $"submissions/{Guid.NewGuid()}-{command.DiagramFileName}";
-                await storage.UploadAsync(diagramKey, command.DiagramStream, command.DiagramContentType!, ct);
-            }
-
-            await repository.SaveUploadResultAsync(submission, reportKey, diagramKey, ct);
+            await repository.SaveUploadResultAsync(submission, reportKey, null, ct);
         }
         catch
         {
             await repository.DeleteAsync(submission, CancellationToken.None);
             try { await storage.DeleteAsync(reportKey, CancellationToken.None); } catch { }
-            if (diagramKey is not null) try { await storage.DeleteAsync(diagramKey, CancellationToken.None); } catch { }
             throw;
         }
 
         await eventBus.PublishAsync(
-            new SubmissionUploaded(submission.Id, submission.AssignmentId, submission.StudentId, reportKey, diagramKey),
+            new SubmissionUploaded(submission.Id, submission.AssignmentId, submission.StudentId, reportKey, null),
             ct);
 
         await eventBus.PublishAsync(
